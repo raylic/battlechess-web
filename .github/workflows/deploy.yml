@@ -1,0 +1,66 @@
+# 部署到 GitHub Pages（项目页：https://<user>.github.io/battlechess-web/）
+#
+# 一次性准备：仓库 Settings → Pages → Build and deployment → Source 选 "GitHub Actions"。
+# 之后 push 到 main 就会自动「装依赖 → 跑测试 → 构建 → 发布」。
+#
+# 本仓库根目录就是这个 Vite 应用本身（不是 monorepo），所以路径无不前缀。
+# ⚠️ 仓库必须是 public，Pages 在免费额度下不开 private 仓库；
+#    而 public 意味着 public/assets 里的美术素材也一并公开 —— 授权问题见 README 第 8 节。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署；新 push 取消排队中的旧部署
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 测试不过就不发版。SW 会缓存客户端资源，带着坏的版本上线比平时更麻烦
+      # （要等缓存过期），所以这里卡一道。
+      - name: 测试
+        run: pnpm test
+
+      - name: 构建
+        run: pnpm build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

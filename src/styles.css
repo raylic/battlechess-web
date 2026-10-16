@@ -1,0 +1,495 @@
+/* 皇家战棋 · Web（Vite + React 版）
+   布局坐标大量沿用原版 1000x650 画布的设计稿；几何参数由 JS 写入 CSS 变量
+   （src/game/geometry.ts 是单一事实来源，tests/layout.test.ts 会验算投影几何） */
+
+:root {
+  --fit: 1;
+  --cell: 88px; /* 棋盘格边长（原版一格约 95px，这里为适配窗口略小） */
+  --tilt: 45deg; /* 2.5D 倾斜角，原版是 cv2 投影变换，这里一行搞定 */
+  --persp: 1600px;
+  --piece-scale: 1.42; /* 棋子比格子大（原版 CHESS_SIZE 124~164 > 95 格宽，是叠着画的） */
+  --piece-lift: 10px;
+  /* 棋子沿深度方向的抬升：必须 > (棋子高/2)·sin(--tilt)，否则下半身会掉到棋盘平面
+     之后被格子挡住（src/game/geometry.ts 的 PIECE_Z 是同一个值，测试守着） */
+  --piece-z: 52px;
+
+  --gold: #ffd04b;
+  --board-1: #aa8fc3;
+  --board-2: #ffffff;
+  --c-select: #ff9900;
+  --c-target: #b0e2ff;
+  --c-last: #9aff9a;
+  --c-hover: #7ce87c;
+
+  --font: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0d1117;
+  color: #fff;
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+}
+
+/* 整个 1000x650 舞台等比缩放到视口，保证与原版布局坐标一致 */
+#app {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1000px;
+  height: 650px;
+  transform: translate(-50%, -50%) scale(var(--fit));
+  transform-origin: center center;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+#game {
+  position: absolute;
+  inset: 0;
+}
+#bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------- 棋盘（CSS 3D） ---------------- */
+#stage {
+  position: absolute;
+  left: 236px;
+  top: 76px;
+  width: calc(var(--cell) * 6);
+  height: calc(var(--cell) * 6);
+  perspective: var(--persp);
+  perspective-origin: 50% 50%;
+}
+#board {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(6, var(--cell));
+  grid-template-rows: repeat(6, var(--cell));
+  transform: rotateX(var(--tilt));
+  transform-style: preserve-3d;
+  /* 用 inset 阴影画金边，不能用 border：border-box 下 border 会吃掉 12px，
+     6 列格子就放不下了（tests/layout.test.ts 守着这条）*/
+  box-shadow:
+    inset 0 0 0 6px var(--gold),
+    0 24px 50px rgba(0, 0, 0, 0.45);
+}
+
+.cell {
+  position: relative;
+  cursor: default;
+  transition: background-color 0.12s;
+}
+.cell.parity-0 {
+  background: var(--board-1);
+}
+.cell.parity-1 {
+  background: var(--board-2);
+}
+.cell.is-last {
+  background: var(--c-last);
+}
+.cell.is-target {
+  background: var(--c-target);
+}
+.cell.is-selected {
+  background: var(--c-select);
+}
+.cell.is-hoverable:hover {
+  background: var(--c-hover);
+  cursor: pointer;
+}
+
+/* ---------------- 棋子 ---------------- */
+#pieces {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+.piece {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--cell) * var(--piece-scale));
+  height: calc(var(--cell) * var(--piece-scale));
+  transform-style: preserve-3d;
+  transform: translate3d(var(--px), var(--py), var(--piece-z)) rotateX(calc(-1 * var(--tilt))) scale(var(--scale, 1));
+  transition:
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1),
+    opacity 0.3s;
+  opacity: var(--opacity, 1);
+  will-change: transform;
+}
+.piece.is-eaten {
+  --scale: 0.35;
+  --opacity: 0;
+}
+.piece .card {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 0.34s ease;
+}
+.piece.is-revealed .card {
+  transform: rotateY(180deg);
+}
+
+.piece .face {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.35));
+}
+.piece .face.back {
+  background-image: url("/assets/unopen.png");
+  background-size: 100% 100%;
+}
+.piece .face.front {
+  background-image: url("/assets/chess.png");
+  background-size: 600% 200%;
+  /* 精灵图 6 列(等级) x 2 行(上红下蓝) */
+  background-position: calc(var(--lv) * 20%) calc(var(--side) * 100%);
+  transform: rotateY(180deg);
+}
+.piece.is-dir-1 .face.front {
+  transform: rotateY(180deg) scaleX(-1);
+}
+.piece.is-dim .face {
+  filter: brightness(0.72) saturate(0.75) drop-shadow(0 6px 6px rgba(0, 0, 0, 0.35));
+}
+.piece.is-active .face {
+  filter: drop-shadow(0 0 10px rgba(255, 208, 75, 0.85)) drop-shadow(0 6px 6px rgba(0, 0, 0, 0.35));
+}
+
+/* ---------------- HUD ---------------- */
+#heads {
+  position: absolute;
+  inset: 0;
+  /* 铺满整个舞台，DOM 顺序又排在棋盘之后 → 不关掉指针事件就会把棋盘的点击全吃掉。
+     jsdom 的 fireEvent.click 绕过命中测试，测不出这类问题，只有真机会点不动。 */
+  pointer-events: none;
+}
+.head {
+  position: absolute;
+  top: 50px;
+  width: 200px;
+  height: 220px;
+}
+.head img {
+  width: 200px;
+  height: 220px;
+  display: block;
+}
+.head.is-active img {
+  filter: drop-shadow(0 0 14px rgba(255, 208, 75, 0.9));
+}
+#head-red {
+  left: 20px;
+}
+#head-blue {
+  left: 780px;
+}
+
+.head .line {
+  position: absolute;
+  width: 120px;
+  text-align: center;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.8);
+}
+.head .line.title {
+  top: 84px;
+  left: 40px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffd04b;
+}
+.head .line.name {
+  top: 126px;
+  left: 78px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.head .line.count {
+  top: 150px;
+  left: 78px;
+  font-size: 13px;
+  color: #e9f7ff;
+}
+
+#panels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.panel {
+  position: absolute;
+  top: 300px;
+  width: 150px;
+  height: 100px;
+}
+.panel img {
+  width: 150px;
+  height: 100px;
+  display: block;
+}
+#panel-red {
+  left: 45px;
+}
+#panel-blue {
+  left: 805px;
+}
+.panel .num {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 100%;
+  text-align: center;
+  font: 700 40px/1 var(--font);
+  color: #cd4f39;
+}
+.panel .cap {
+  position: absolute;
+  left: 0;
+  top: 66px;
+  width: 100%;
+  text-align: center;
+  font: 700 13px/1 var(--font);
+  color: #cd4f39;
+}
+
+#banner {
+  position: absolute;
+  pointer-events: none;
+  left: 350px;
+  top: 112px;
+  width: 300px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+  border: 2px solid var(--gold);
+  border-radius: 17px;
+  font: 700 15px/1 var(--font);
+  color: #ffe9a8;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9);
+}
+#controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* 同上：它会盖住棋盘；里面能点的按钮得自己把指针事件打开 */
+}
+#controls .imgbtn {
+  pointer-events: auto;
+}
+
+/* 图片按钮：统一用背景图 + background-position 取精灵图 */
+.imgbtn {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35));
+}
+.imgbtn:disabled {
+  filter: grayscale(0.85) brightness(0.8);
+  cursor: not-allowed;
+}
+.imgbtn.b-mode {
+  width: 145px;
+  height: 52px;
+  top: 500px;
+  background-image: url("/assets/button_mode.png");
+  background-size: 200% 200%;
+}
+.imgbtn.b-mode[data-col="0"] {
+  left: 300px;
+  background-position: 0% 0%;
+}
+.imgbtn.b-mode[data-col="0"]:hover {
+  background-position: 0% 100%;
+}
+.imgbtn.b-mode[data-col="1"] {
+  left: 555px;
+  background-position: 100% 0%;
+}
+.imgbtn.b-mode[data-col="1"]:hover {
+  background-position: 100% 100%;
+}
+.imgbtn.b-giveup {
+  left: 427px;
+  top: 580px;
+  width: 145px;
+  height: 52px;
+  background-image: url("/assets/button_giveup.png");
+  background-size: 200% 200%;
+  background-position: 100% 0%;
+}
+.imgbtn.b-giveup:hover:not(:disabled) {
+  background-position: 100% 100%;
+}
+.imgbtn.b-ok {
+  left: 440px;
+  top: 300px;
+  width: 120px;
+  height: 43px;
+  background-image: url("/assets/button_ok.png");
+  background-size: 100% 200%;
+  background-position: 0% 0%;
+}
+.imgbtn.b-ok:hover {
+  background-position: 0% 100%;
+}
+
+.hint {
+  position: absolute;
+  width: 200px;
+  text-align: center;
+  font: 500 12px/1.35 var(--font);
+  color: #fff8dc;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+#foot {
+  left: 330px;
+  top: 636px;
+  width: 340px;
+}
+
+/* ---------------- 开始界面 ---------------- */
+#start {
+  position: absolute;
+  inset: 0;
+  background: #0d1117 url("/assets/bg.jpg") center/cover no-repeat;
+}
+#start .art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------------- 弹窗 / 结算 ---------------- */
+#modal {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  /* 压暗层：终局时把棋盘整体压暗。
+     原来是 <img> 引一张名为 trans_bg 的素材，那张图就是 80% 不透明纯黑
+     （每像素 rgba(0,0,0,204)），内容为零 —— 改用背景色表达，素材已删。
+     ⚠ layout.test 会扫源码里出现的一切图片文件名（连注释也算），写注释也别带扩展名。 */
+  background: rgba(0, 0, 0, 0.8);
+}
+#modal .panel {
+  left: 340px;
+  top: 78px;
+  width: 320px;
+  height: 295px;
+  background-image: url("/assets/wait.png");
+  background-size: 400% 100%; /* 精灵图已裁成单行：4 列 x 1 行，cell 320x295 与面板 1:1 */
+}
+#modal .why,
+#modal .again {
+  z-index: 1;
+}
+#modal .why {
+  position: absolute;
+  left: 300px;
+  top: 372px;
+  width: 400px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 14px/1 var(--font);
+  color: #ffe9a8;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9);
+}
+#modal .again {
+  position: absolute;
+  left: 300px;
+  top: 404px;
+  width: 400px;
+  text-align: center;
+}
+#modal .again button {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 208, 75, 0.7);
+  border-radius: 14px;
+  color: #ffe9a8;
+  font: 600 13px/1 var(--font);
+  padding: 7px 14px;
+  cursor: pointer;
+}
+#modal .again button:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 30;
+  pointer-events: none; /* 纯提示：z-index 比认输按钮高，别让它挡住按钮 */
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(200, 40, 40, 0.9);
+  color: #fff;
+  font: 600 14px/1 var(--font);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* 调试：真面目面板（?debug=1） */
+#truth {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 40;
+  pointer-events: none; /* 调试面板是纯展示 */
+  max-width: 460px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #9ff;
+  font: 11px/1.5 ui-monospace, Menlo, monospace;
+  white-space: pre;
+}
