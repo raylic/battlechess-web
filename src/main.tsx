@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import App from './App';
+import { lockLandscape } from './lockOrientation';
 import { registerServiceWorker } from './registerSw';
 import './styles.css';
 
@@ -15,3 +16,4 @@ createRoot(root).render(
 );
 
 registerServiceWorker();
+lockLandscape();

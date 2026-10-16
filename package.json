@@ -14,7 +14,8 @@
     "lint": "oxlint",
     "typecheck": "tsc -b",
     "assets": "bash scripts/fetch-assets.sh",
-    "click:check": "node scripts/click-check.mjs"
+    "click:check": "node scripts/click-check.mjs",
+    "pwa:check": "node scripts/pwa-check.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

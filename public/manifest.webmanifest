@@ -1,0 +1,17 @@
+{
+  "name": "皇家战棋 · Web",
+  "short_name": "皇家战棋",
+  "description": "《皇家战棋》的网页复刻：6×6 暗棋，翻棋、走子、吃子，纯前端可玩。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "theme_color": "#0d1117",
+  "background_color": "#0d1117",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

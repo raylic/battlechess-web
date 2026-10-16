@@ -33,6 +33,9 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  /* 移动端：下拉刷新 / 边缘回弹 / 橡皮筋都要掐掉 —— 全屏画布上误触一次下拉刷新
+     就等于重开一局，这个坑在手机上非常容易踩 */
+  overscroll-behavior: none;
   background: #0d1117;
   color: #fff;
   font-family: var(--font);
@@ -52,6 +55,13 @@ body {
   height: 650px;
   transform: translate(-50%, -50%) scale(var(--fit));
   transform-origin: center center;
+  /* 移动端手感：
+     touch-action: manipulation 去掉双击缩放（棋盘要连点，能缩放的屏幕非常致命）；
+     user-select: none 防长按选中；tap-highlight 透明，否则每点一格都闪一个灰方块 */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
     0 30px 80px rgba(0, 0, 0, 0.6);
@@ -492,4 +502,74 @@ body {
   color: #9ff;
   font: 11px/1.5 ui-monospace, Menlo, monospace;
   white-space: pre;
+}
+
+/* ---------------- 竖屏遮罩：请把手机横过来 ----------------
+   为什么必须有这一层：
+     · 舞台写死 1000x650（宽高比 1.538）。390x844 的竖屏手机上
+       --fit = min(390/1000, 844/650) = 0.39，棋盘被缩成 390x253、一格约 34px，
+       手指根本点不准 —— 竖屏不是“难看”，是“没法玩”。
+     · manifest 的 orientation:landscape 只在“装到主屏 / 独立窗口”后生效，
+       规范明说浏览器标签页里忽略（display mode = browser）。
+     · screen.orientation.lock() 需要全屏 / 独立窗口，iOS Safari 更是压根没实现。
+   真正兜底的就是这一层：不依赖 JS、不依赖是否安装、全平台一致。
+
+   只在「竖屏 + 粗指针（触屏）」时出现：
+     · (pointer: coarse) 把桌面浏览器排掉 —— 桌面把窗口拉窄拉高不该弹这个；
+     · 平板（iPad 竖屏）会命中，这是有意的：1000x650 在竖屏下上下全是黑边，
+       横过来明显更好；真不想管平板，加一条 (max-width: 900px) 就行。 */
+#rotate {
+  position: fixed; /* 相对视口，不跟 --fit 缩放走（竖屏时舞台只有 0.39 倍，不能挂在它里） */
+  inset: 0;
+  z-index: 100;
+  display: none; /* 默认不出现，开关在文件最下面那条媒体查询 */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px;
+  background: #0d1117;
+  color: var(--gold);
+  text-align: center;
+  /* 纯提示层，不拦事件：万一下面那条媒体查询判断偏了（某些触屏笔记本），
+     用户不会被这层困住 —— 宁可他点到一个缩小的棋盘，也不要面对一块点不动的黑屏 */
+  pointer-events: none;
+}
+#rotate svg {
+  width: 96px;
+  height: 96px;
+}
+#rotate p {
+  margin: 0;
+  color: #fff;
+  font: 500 18px/1.6 var(--font);
+}
+#rotate .sub {
+  max-width: 20em;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+}
+
+/* 图标来回转 90°，直观说明“你要干嘛”。尊重系统的「减弱动态效果」 */
+@media (prefers-reduced-motion: no-preference) {
+  #rotate svg {
+    animation: rotate-hint 2.6s ease-in-out infinite;
+  }
+}
+@keyframes rotate-hint {
+  0%,
+  35% {
+    transform: rotate(0deg);
+  }
+  55%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+/* 这一条就是全部开关：竖屏 + 触屏 ⇒ 显示遮罩 */
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate {
+    display: flex;
+  }
 }

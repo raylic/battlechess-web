@@ -142,7 +142,7 @@ export const DEFAULT_POLICY: Policy = POLICY.OWN_KNOWN;
 | 规则内核 | `core/rules` `core/judge` `core/reduce` | 克制矩阵 36 种组合全枚举、棋盘对称性与种子可复现、走子/吃子/翻棋边界、四条结束条件、**畸形 action 一律 rejected 不抛异常** |
 | 隐藏信息 | `core/visibility` | **双盲不可区分性**：只打乱未翻开棋子的身份，两个视角的投影必须完全等价（最强的"不泄漏"断言）；口径开关；投影是纯数据 |
 | 压测 | `core/selfplay` | 随机 300 局 + AI 自对弈 1000 局全部收敛、四类结束条件都被走到、同 seed 完全可复现 |
-| 应用层 | `game/*` `components/*` `App.test.tsx` `layout.test.ts` | 点击策略与两条守卫、HUD 文案与结算面板映射、幽灵淡出、会话拆卸（退订真的生效）、组件渲染与交互、**App 级人机对局端到端**、几何投影验算、素材存在性、**覆盖层不得拦截棋盘点击**、**棋子不得被棋盘平面裁切** |
+| 应用层 | `game/*` `components/*` `App.test.tsx` `layout.test.ts` `pwa.test.ts` | 点击策略与两条守卫、HUD 文案与结算面板映射、幽灵淡出、会话拆卸（退订真的生效）、组件渲染与交互、**App 级人机对局端到端**、几何投影验算、素材存在性、**覆盖层不得拦截棋盘点击**、**棋子不得被棋盘平面裁切**、**PWA 清单字段与图标真实尺寸、竖屏遮罩的开关条件** |
 
 规则内核测试跑在 node 环境（快），组件测试用 `// @vitest-environment jsdom` 标注。
 
@@ -156,6 +156,15 @@ pnpm click:check    # Chrome headless + CDP，派发真实鼠标事件
 它守的是 jsdom **结构性覆盖不到**的一类问题：`fireEvent.click` 是直接派发到目标元素的，绕开了浏览器的命中测试 —— 于是"有一层东西盖在棋盘上方"在单测里完全看不出来，真机上却一个子都点不动（真实翻过车：`#heads` / `#controls` 是 `inset:0` 铺满舞台、DOM 顺序又排在 Board 之后，接管了棋盘上的全部点击）。脚本会真实点击并断言翻棋 / 选中 / 吃子走子 / 认输按钮，另外做一组 A/B 对照：把覆盖层的 `pointer-events` 改回 `auto` 就能复现"点不动"。
 
 需要本机有 Chrome / Chromium；没有就跳过（退出码 2 并提示）。
+
+### 真浏览器 PWA / 横屏自检（同样不在 `pnpm test` 里）
+
+```sh
+pnpm build && pnpm preview    # SW 只在生产构建注册，所以要打产物
+pnpm pwa:check [url]          # 默认打 dev server；给 URL 就能打 preview / 线上
+```
+
+竖屏遮罩的开关是一句 CSS 媒体查询，而 **jsdom 没有媒体查询求值、没有真实视口** —— `pwa.test.ts` 只能断言“这句写在文件里”，断言不了“它到底会不会显示”。这个脚本用 CDP 模拟真机视口 + 触摸，实测四种场景。细节见 §10。
 
 ---
 
@@ -175,6 +184,7 @@ pnpm click:check    # Chrome headless + CDP，派发真实鼠标事件
 - 美术素材（`public/assets/*`）来自原作仓库，由原作者加工，其中棋子/头像含 **QQ 宠物 IP**，版权归原作者与相关权利人。本仓库公开**仅为了托管 GitHub Pages 试玩**，不是为了推广或分发这些素材，也**不得商用**；若权利人提出要求，会立即移除。
 - 重新拉取素材：`pnpm assets`。脚本只拷本作**真正用到的那 12 张** —— 原仓库里登录 / 匹配 / 取消等界面的图本作没有实现，不拷，所以 `public/assets` 一直是“每个文件都被引用”。
   ⚠️ 这个脚本是把上游原图**直接覆盖进 `public/assets/`**。但 `public/assets/` 现在装的是流水线产出的版本（去掉了边缘杂色的 1x、`begin.png` 抹掉了原作的纪念文字、`wait.png` 裁成了单行），跑一次 `pnpm assets` 会把它们全部冲回原样。要用请先确认。
+- PWA 图标（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` / `apple-touch-icon.png` / `icon.ico`）不是上游素材，是 `scripts/make-icons.py` 从 4x 的 `begin.png` 裁出来的，裁剪框与原来的 `icon.ico` **完全相同**。重新生成：`python3 scripts/make-icons.py`（需要 Pillow，不参与构建也不参与测试）。
 
 ---
 
@@ -203,4 +213,53 @@ GitHub Pages **不允许自定义响应头** —— 全站固定 `Cache-Control:
 
 ### 构建产物
 
-`dist/` 约 **1.9 MB** = 12 张素材约 1.65 MB + 代码（JS/CSS/HTML）约 0.25 MB。`dist` 在 `.gitignore` 里，由 CI 发布，不进版本库。
+`dist/` 约 **2.04 MB** = 图片 1.79 MB（12 张素材 1.64 MB + 5 个图标 0.15 MB）+ 代码 0.25 MB。`dist` 在 `.gitignore` 里，由 CI 发布，不进版本库。
+
+---
+
+## 10. 移动端 / PWA / 强制横屏
+
+### 可安装（PWA）
+
+`public/manifest.webmanifest` + `public/assets/` 下的 192 / 512 / maskable / apple-touch 四个 PNG。都是手写的，**没有引入 `vite-plugin-pwa` / workbox** —— 项目只有 react + react-dom 两个依赖，不为这点事破例。
+
+manifest 里的 URL **全是相对路径**（`start_url: "./"`、图标 `src: "assets/xxx.png"`），这不是偷懒：
+
+- Vite 只改写 `index.html` 和 `src/` 里的引用，**`public/` 下的文件是原样拷贝的**，manifest 拿不到 `base`；
+- 相对 URL 按“manifest 自身的位置”解析，所以它天然跟着 `base` 走 —— `BASE_PATH=/ pnpm build` 出来的包也是对的；
+- 代价是 `src/pwa.test.ts` 里有一条测试专门盯着“别在 manifest 里写绝对路径”。
+
+图标由 `scripts/make-icons.py` 生成，顺手做了两件好事：给 `apple-touch-icon` 和 maskable 版本**铺上 `#0d1117` 底**（iOS 会把透明像素渲成黑色，Android 会把 maskable 裁掉一圈），以及**量化到 256 色** —— 扁色卡通肉眼无差，整套图标 810 KB → 153 KB。
+
+### 强制横屏：三层，逐层兜底
+
+| 层 | 手段 | 什么时候真的有效 |
+|---|---|---|
+| 1 | `manifest.orientation: "landscape"` | **装到主屏后**的独立窗口。规范明说浏览器标签页里忽略（display mode = browser） |
+| 2 | `screen.orientation.lock('landscape')`（`src/lockOrientation.ts`） | 支持且已独立窗口的浏览器。**iOS Safari 压根没实现这个方法**；Chrome 要求用户手势，所以代码在首次 `pointerdown` 时再补一刀，失败全程静默 |
+| 3 | **竖屏遮罩**（`index.html` 的 `#rotate` + `styles.css` 的媒体查询） | **全平台、无需安装、不依赖 JS**。这才是真正兜底的那层 |
+
+第 3 层为什么非要不可：舞台写死 1000×650（宽高比 1.538），390×844 的手机上 `--fit = min(390/1000, 844/650) = 0.39`，棋盘被缩成 **390×253、一格约 34px**，手指点不准；同一台机器横过来就是 `--fit = 0.60`。
+
+几个刻意的取舍：
+
+- **遮罩写在 `index.html` 而不是 React 组件里**：JS 还没挂载（甚至挂了）的时候，竖屏用户看到的就已经是提示，而不是一个缩小的棋盘。
+- **开关只有一句媒体查询**：`@media (orientation: portrait) and (pointer: coarse)`。`(pointer: coarse)` 是为了不误伤桌面 —— 桌面把窗口拉窄拉高不该弹这个。
+- **遮罩 `pointer-events: none`**：纯提示、不拦事件。万一下面那句媒体查询判断偏了（某些触屏笔记本），用户不会被这层困住。
+- **平板（iPad 竖屏）也会命中**，这是有意的：1000×650 在竖屏下上下全是黑边。真不想管平板，加一条 `(max-width: 900px)` 就行。
+- **没做“竖屏时把舞台旋转 90°”**：那套是给“系统方向锁开着”的用户用的，得歪着头玩，v1 不做。
+
+### 移动端手感补丁
+
+`overscroll-behavior: none`（防下拉刷新 —— 全屏画布上误触一次就等于重开一局）、`touch-action: manipulation`（去掉双击缩放）、`user-select: none`、`-webkit-tap-highlight-color: transparent`、`viewport-fit=cover`（让底色铺到刘海区）。
+
+### 自检
+
+```sh
+pnpm build && pnpm preview
+pnpm pwa:check "http://localhost:4173/battlechess-web/?mode=hotseat&seed=42"
+```
+
+它用 CDP 模拟真机视口 + 触摸，实测四件事：Chrome 真的解析了 manifest（`Page.getAppManifest`，含每个图标 HEAD 200）、遮罩在「桌面横窗 / 桌面窄高窗 / 竖屏手机 / 横屏手机」四种情况下的显隐、`screen.orientation` 能力、SW 接管。
+
+⚠️ **桌面那两条必须跑在触摸模拟之前**：CDP 的 `setTouchEmulationEnabled(false)` 不会把 `pointer: coarse` 干净地还原，之后测到的就是脏状态。（这个坑是在写这个脚本时真实踩到的：它一度报“桌面窄高窗也弹遮罩”，而实际代码是对的。）

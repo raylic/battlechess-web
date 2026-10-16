@@ -2,12 +2,45 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!-- viewport-fit=cover：让底下的 #0d1117 铺到刘海/圆角区（横屏时刘海在左右两侧）。
+         user-scalable=no 在 iOS 10+ 会被忽略（无障碍），真正防误触缩放的是 CSS 的 touch-action。 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0d1117" />
+
     <link rel="icon" type="image/x-icon" href="/assets/icon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- iOS 不认 .ico，只认 apple-touch-icon；不写 sizes 让 iOS 自己挑最合适的缩放 -->
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+
+    <!-- PWA：可安装（装到主屏 / 桌面后独立窗口打开，且被系统锁成横屏） -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="皇家战棋" />
+
     <title>皇家战棋 · Web</title>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- 竖屏遮罩。写在 React 根之外、且显隐完全由 CSS 媒体查询决定，是为了"首帧就对"：
+         JS 挂载前、甚至 JS 挂了，竖屏用户看到的也是提示而不是一个缩成 390x253 的棋盘。
+         为什么必须有它 —— 见 styles.css 里 #rotate 的注释。 -->
+    <div id="rotate" aria-hidden="true">
+      <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+        <!-- 竖着的手机 -->
+        <rect x="44" y="16" width="32" height="58" rx="9" />
+        <line x1="55" y1="25" x2="65" y2="25" />
+        <!-- 转到横屏的箭头 -->
+        <path d="M26 58a30 30 0 0 0 30 30h30" />
+        <path d="M78 80l9 8-9 8" />
+      </svg>
+      <p>请把手机横过来</p>
+      <p class="sub">本作是按横屏（1000×650）画的，竖屏下棋盘会缩得点不准</p>
+    </div>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
