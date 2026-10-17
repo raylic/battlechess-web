@@ -17,6 +17,10 @@ export interface GameScreenProps {
   onOk: () => void;
   onRestart: () => void;
   onToastDone: () => void;
+  flagged?: boolean;
+  onFlag?: () => void;
+  onExport?: () => void;
+  recordCount?: number;
 }
 
 export function GameScreen({
@@ -30,6 +34,10 @@ export function GameScreen({
   onOk,
   onRestart,
   onToastDone,
+  flagged,
+  onFlag,
+  onExport,
+  recordCount,
 }: GameScreenProps) {
   return (
     <div id="game">
@@ -39,7 +47,15 @@ export function GameScreen({
         <>
           <Board view={view} onAction={onAction} />
           <Hud view={view} mode={mode} side={side} onResign={onResign} />
-          <ResultModal view={view} onOk={onOk} onRestart={onRestart} />
+          <ResultModal
+            view={view}
+            onOk={onOk}
+            onRestart={onRestart}
+            flagged={flagged}
+            onFlag={onFlag}
+            onExport={onExport}
+            recordCount={recordCount}
+          />
         </>
       ) : null}
       <Toast message={toast} onDone={onToastDone} />

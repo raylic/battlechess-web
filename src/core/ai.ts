@@ -1,17 +1,12 @@
 // 简易 AI —— 只用 ViewState 里的公开信息，绝不偷看真相
 // （所以它能反过来验证视角投影足够支撑一整局对局）
 
-import { BOARD_SIZE, LEVEL_COUNT_PER_SIDE, LEVEL_VALUE, SIDES, canEat, other } from './pieces';
-import type { Action, Pos, Side, ViewCell, ViewState } from './types';
+import { BOARD_SIZE, LEVEL_VALUE, SIDES, canEat, other } from './pieces';
+import { hiddenPool } from './features';import type { Action, Pos, Side, ViewCell, ViewState } from './types';
 
-/** 还没翻开的棋子里，各方各等级还剩几个（公开知识：总数固定 + 已翻开的已知） */
+/** 还没翻开的棋子里，各方各等级还剩几个（公开知识，精确值 —— 见 features.hiddenPool） */
 export function unknownPool(view: ViewState): Record<Side, number[]> {
-  const pool = {} as Record<Side, number[]>;
-  for (const side of SIDES) pool[side] = LEVEL_COUNT_PER_SIDE.slice();
-  for (const cell of view.cells) {
-    if (cell.revealed && cell.side && cell.level !== null) pool[cell.side][cell.level] -= 1;
-  }
-  return pool;
+  return hiddenPool(view);
 }
 
 /** 每个未翻开格子属于某方某等级的概率 —— 棋子池是公开知识，所以这个后验是精确的 */
@@ -94,7 +89,7 @@ export function chooseAction(view: ViewState, rand: () => number = Math.random):
 
   // 翻棋：翻到自己强子的期望收益 - 免费给对方亮牌的期望损失
   let flipScore = 2;
-  for (let level = 0; level < LEVEL_COUNT_PER_SIDE.length; level++) {
+  for (let level = 0; level < LEVEL_VALUE.length; level++) {
     flipScore += prob[view.you][level]! * LEVEL_VALUE[level]! * 0.35;
     flipScore -= prob[enemy][level]! * LEVEL_VALUE[level]! * 0.15;
   }

@@ -473,6 +473,30 @@ body {
   background: rgba(0, 0, 0, 0.65);
 }
 
+/* 对局记录：终局弹窗上的一行小按钮（标记坏棋 / 导出给 AI 复盘） */
+#modal .logrow {
+  position: absolute;
+  left: 240px;
+  top: 440px;
+  width: 520px;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+#modal .logrow button {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 208, 75, 0.45);
+  border-radius: 14px;
+  color: #ffe9a8;
+  font: 600 12px/1 var(--font);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+#modal .logrow button:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
 #toast {
   position: absolute;
   left: 50%;

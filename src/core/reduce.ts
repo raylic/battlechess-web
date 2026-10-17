@@ -9,8 +9,35 @@ import { judge, MIN_GIVEUP } from './judge';
 import { legalActions, samePos } from './rules';
 import type { ApplyResult, GameEvent, GameState, Piece, Pos, Side } from './types';
 
+/** 保留多少步公开局面指纹。再往前的重复已经不重要，卡住长度免得状态无限长 */
+export const HISTORY_CAP = 512;
+
+/**
+ * 公开局面指纹 —— 只由"双方都能看见的东西"决定：
+ *   轮到谁 + 每格是空的(.)／未翻开(x)／翻开的红蓝几级(R0/B3…)
+ * 故意**不含** noEat / step 这类计数器，所以"同一颗子走回去"在几步之后会撞上同一个指纹。
+ * 不含任何暗子身份 → 放进投影不泄露隐藏信息。
+ */
+export function publicKey(state: GameState): string {
+  let out = state.turn === 'red' ? 'r' : 'b';
+  for (let row = 0; row < BOARD_SIZE; row++) {
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      const p = state.grid[row]![col];
+      if (!p) out += '.';
+      else if (!p.revealed) out += 'x';
+      else out += `${p.side === 'red' ? 'R' : 'B'}${p.level}`;
+    }
+  }
+  return out;
+}
+
+function pushHistory(state: GameState): void {
+  state.history.push(publicKey(state));
+  if (state.history.length > HISTORY_CAP) state.history.shift();
+}
+
 export function createState(seed: number, opts: { firstTurn?: Side } = {}): GameState {
-  return {
+  const state: GameState = {
     seed,
     grid: createGrid(seed),
     turn: opts.firstTurn ?? 'red',
@@ -20,7 +47,10 @@ export function createState(seed: number, opts: { firstTurn?: Side } = {}): Game
     lastStep: null,
     winner: null,
     reason: null,
+    history: [],
   };
+  state.history.push(publicKey(state));
+  return state;
 }
 
 /** 深拷贝一份状态（36 个格子，成本可以忽略） */
@@ -35,6 +65,7 @@ export function cloneState(s: GameState): GameState {
     lastStep: s.lastStep ? ([...s.lastStep] as Pos) : null,
     winner: s.winner,
     reason: s.reason,
+    history: s.history.slice(),
   };
 }
 
@@ -51,20 +82,25 @@ export function toPos(v: unknown): Pos | null {
 }
 
 function finish(state: GameState, events: GameEvent[]): ApplyResult {
+  pushHistory(state);
   judge(state);
   if (state.winner) events.push({ kind: 'end', winner: state.winner, reason: state.reason! });
   return { state, events };
 }
 
-export function applyAction(state: GameState, action: unknown): ApplyResult {
+export function applyAction(state: GameState, action: unknown, trusted = false): ApplyResult {
   if (state.winner) return { rejected: '对局已经结束了' };
   if (!isRecord(action)) return { rejected: '非法操作' };
 
-  const acts = legalActions(state);
+  // trusted = true 是**内部搜索**用的快路：调用方已保证这个动作合法，少算一遍 legalActions。
+  // 外部边界（transport / 测试）绝不能传 true —— 那里的 action 是不可信输入。
+  const acts = trusted ? null : legalActions(state);
 
   if (action.t === 'flip') {
     const at = toPos(action.at);
-    if (!at || !acts.flips.some((p) => samePos(p, at))) return { rejected: '这个位置翻不了' };
+    if (!at || (acts !== null && !acts.flips.some((p) => samePos(p, at)))) {
+      return { rejected: '这个位置翻不了' };
+    }
     const next = cloneState(state);
     const piece = next.grid[at[0]]![at[1]]!;
     piece.revealed = true;
@@ -79,8 +115,9 @@ export function applyAction(state: GameState, action: unknown): ApplyResult {
     const from = toPos(action.from);
     const to = toPos(action.to);
     if (!from || !to) return { rejected: '非法操作' };
-    const ok = acts.moves.some((m) => samePos(m.from, from) && samePos(m.to, to));
-    if (!ok) return { rejected: '这步棋不合法' };
+    if (acts !== null && !acts.moves.some((m) => samePos(m.from, from) && samePos(m.to, to))) {
+      return { rejected: '这步棋不合法' };
+    }
 
     const next = cloneState(state);
     const piece = next.grid[from[0]]![from[1]] as Piece;

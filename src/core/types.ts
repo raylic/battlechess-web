@@ -32,6 +32,11 @@ export interface GameState {
   lastStep: Pos | null;
   winner: Side | 'draw' | null;
   reason: Reason | null;
+  /**
+   * 每一步之后的**公开局面指纹**（含初始局面），见 reduce.publicKey。
+   * 双盲之下这是双方共享的公开知识，AI 用它认出"我是不是在来回走"。
+   */
+  history: string[];
 }
 
 export type Action =
@@ -66,12 +71,20 @@ export interface ViewState {
   step: number;
   noEat: number;
   counts: Record<Side, number>;
+  /**
+   * 各方各等级**已经被吃掉**的棋子数（公开知识：每个被吃的子在被吃之前都是翻开的，
+   * 双方都看见了；这里只是把它显式化，免得投影层之外的代码又要自己重算一遍）。
+   * 有了它，"还没翻开的棋子各等级还剩几个"就是精确值，而不是估算。
+   */
+  fallen: Record<Side, number[]>;
   lastStep: Pos | null;
   winner: Side | 'draw' | null;
   reason: Reason | null;
   over: boolean;
   policy: Policy;
   canResign: boolean;
+  /** 最近若干步的公开局面指纹（最后一个是当前局面）。AI 的"避免循环"就靠它 */
+  recent: string[];
   cells: ViewCell[];
   /** 合法着法由权威算好下发，前端不重复实现规则 */
   legal: LegalMoves;

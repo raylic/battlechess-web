@@ -122,6 +122,44 @@ test('restart：种子 +1，并把新种子发给权威（棋盘真的换了一�
   expect(result.current.session, '换盘不重建会话（同一局继续）').toBe(session);
 });
 
+test('连点两次"再来一局"：种子必须每次都往前走（曾经卡在 +1）', async () => {
+  const { result } = renderHook(() => useSession(200));
+  act(() => {
+    result.current.start('ai');
+  });
+  const session = result.current.session!;
+
+  const boards = [JSON.stringify(session.authority!.truth().grid)];
+  const seeds: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    act(() => {
+      result.current.restart();
+    });
+    await tick();
+    seeds.push(result.current.seed);
+    boards.push(JSON.stringify(session.authority!.truth().grid));
+  }
+
+  expect(seeds).toEqual([201, 202, 203]);
+  expect(session.authority!.truth().seed).toBe(203);
+  // 四次盘面两两不同（真换了盘，不是发同一个种子）
+  expect(new Set(boards).size).toBe(boards.length);
+});
+
+test('换盘会把种子写回地址栏（刷新/分享/复盘拿到的是同一盘）', async () => {
+  window.history.replaceState(null, '', '/?mode=ai&seed=300');
+  const { result } = renderHook(() => useSession(300));
+  act(() => {
+    result.current.start('ai');
+  });
+  act(() => {
+    result.current.restart();
+  });
+  await tick();
+  expect(new URL(window.location.href).searchParams.get('seed')).toBe('301');
+  expect(new URL(window.location.href).searchParams.get('mode')).toBe('ai');
+});
+
 test('back：会话清空，且旧 client 的退订真的生效（再广播它收不到）', async () => {
   const { result } = renderHook(() => useSession(8));
   act(() => {

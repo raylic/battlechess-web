@@ -48,6 +48,7 @@ export function stateWithGrid(
     lastStep: null,
     winner: null,
     reason: null,
+    history: [],
     ...patch,
   };
 }

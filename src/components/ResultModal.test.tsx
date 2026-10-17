@@ -52,3 +52,23 @@ test('确定 → 回开始界面；再来一局 → 换一盘', () => {
   fireEvent.click(screen.getByText('再来一局（换一盘）'));
   expect(onRestart).toHaveBeenCalledTimes(1);
 });
+
+test('对局记录：标记按钮与导出按钮都挂在终局弹窗上', () => {
+  const onFlag = vi.fn();
+  const onExport = vi.fn();
+  const { rerender } = render(
+    <ResultModal view={finished('red')} onOk={() => {}} onRestart={() => {}} onFlag={onFlag} onExport={onExport} recordCount={3} />,
+  );
+  fireEvent.click(screen.getByTestId('flag-game'));
+  expect(onFlag).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByTestId('export-log'));
+  expect(onExport).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId('export-log')).toHaveTextContent('导出对局记录（3）');
+  expect(screen.getByTestId('flag-game')).toHaveTextContent('标记这局有问题');
+
+  // 已标记的状态要能看出来（否则用户会重复点）
+  rerender(
+    <ResultModal view={finished('red')} onOk={() => {}} onRestart={() => {}} flagged onFlag={onFlag} onExport={onExport} recordCount={3} />,
+  );
+  expect(screen.getByTestId('flag-game')).toHaveTextContent('已标记这局');
+});

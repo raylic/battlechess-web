@@ -72,10 +72,36 @@ export interface SessionApi {
   restart: () => void;
 }
 
+/**
+ * 把当前种子写回地址栏。
+ *
+ * `?seed=` 本来就是"这一盘的编号"，写回去之后：刷新得到同一盘、分享给别人也是同一盘、
+ * 复盘时也不用再问"你这盘种子多少"。用 replaceState 而不是 push —— 换一局不该往历史里
+ * 塞一条记录，否则返回键会陷入一连串棋局。
+ */
+function syncSeedInUrl(seed: number): void {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('seed') === String(seed)) return;
+    url.searchParams.set('seed', String(seed));
+    window.history.replaceState(null, '', url.toString());
+  } catch {
+    // 拿不到 history（测试环境、隐私模式）就当没这回事，不能因此挂掉
+  }
+}
+
 export function useSession(initialSeed: number, opts: SessionOptions = {}): SessionApi {
   const [seed, setSeed] = useState(initialSeed);
   const [session, setSession] = useState<Session | null>(null);
   const current = useRef<Session | null>(null);
+  /**
+   * **当前**棋局的种子。
+   *
+   * 不能读 `session.seed` —— 那是建会话时的快照，而"再来一局"是往同一个会话里发 restart，
+   * 会话对象不重建。读它就永远得到同一个值：第二次点"再来一局"发的还是同一个种子，
+   * 棋盘跟当前这盘一模一样（看起来就是"种子不刷新了"）。
+   */
+  const seedRef = useRef(initialSeed);
 
   // 用 ref 镜像一份，回调里读到的才是最新的；不在卸载时清理
   // （StrictMode 的模拟卸载会把会话关掉，而真实关页面本来就会销毁 worker/端口）
@@ -90,7 +116,7 @@ export function useSession(initialSeed: number, opts: SessionOptions = {}): Sess
 
   function start(mode: Mode, side: Side | null = null): Session {
     close(current.current);
-    const next = createSession(mode, side, seed, opts);
+    const next = createSession(mode, side, seedRef.current, opts);
     setSession(next);
     return next;
   }
@@ -103,8 +129,11 @@ export function useSession(initialSeed: number, opts: SessionOptions = {}): Sess
   function restart(): void {
     const s = current.current;
     if (!s) return;
-    const nextSeed = s.seed + 1;
+    // 用 seedRef 递增（不能用 s.seed，见 seedRef 的注释）
+    const nextSeed = seedRef.current + 1;
+    seedRef.current = nextSeed;
     setSeed(nextSeed);
+    syncSeedInUrl(nextSeed);
     s.client.send({ t: 'restart', seed: nextSeed });
   }
 
