@@ -14,8 +14,7 @@ import {
   isMyTurn,
   playerNames,
   resignDisabled,
-  resultColumn,
-  resultPanelStyle,
+  resultArt,
   resultTitle,
   resultWhy,
   sideName,
@@ -95,21 +94,15 @@ test('结算理由文案带上结束原因', () => {
   expect(resultWhy({ winner: 'draw', reason: 'resign' })).toBe('和局 · 对方认输');
 });
 
-test('结算面板精灵图：红胜=第0列、蓝胜=第1列、和局=第2列', () => {
-  // wait.png 已裁成 4 列 x 1 行（原图上面那行是联网口径 + 积分，本作不用）
-  expect(resultColumn('red')).toBe(0);
-  expect(resultColumn('blue')).toBe(1);
-  expect(resultColumn('draw')).toBe(2);
-  expect(resultColumn(null)).toBe(2);
+test('结算面板：红胜/蓝胜/和局各用一张顶栏', () => {
+  // wait.png 拆成了 4 张顶栏 + 1 张共用面板（见 scripts/split-wait.py）。
+  // 顶栏带王冠颜色和标题字，所以每个结果必须是自己那张。
+  expect(resultArt('red')).toBe('wait_top_red.webp');
+  expect(resultArt('blue')).toBe('wait_top_blue.webp');
+  expect(resultArt('draw')).toBe('wait_top_draw.webp');
+  expect(resultArt(null)).toBe('wait_top_draw.webp');
 
-  expect(resultPanelStyle('red')).toEqual({ backgroundSize: '400% 100%', backgroundPosition: '0% 0%' });
-  expect(resultPanelStyle('blue')).toEqual({
-    backgroundSize: '400% 100%',
-    backgroundPosition: `${100 / 3}% 0%`,
-  });
-  expect(resultPanelStyle('draw').backgroundPosition).toBe(`${200 / 3}% 0%`);
-
-  // 三个结果必须落在三个不同的列上（防"赢了显示失败"）
-  const xs = new Set(['red', 'blue', 'draw'].map((w) => resultPanelStyle(w as 'red').backgroundPosition));
-  expect(xs.size).toBe(3);
+  // 三个结果必须落在三张不同的图上（防"赢了显示失败"）
+  const names = new Set(['red', 'blue', 'draw'].map((w) => resultArt(w as 'red')));
+  expect(names.size).toBe(3);
 });

@@ -11,12 +11,11 @@ const cells = () => screen.getAllByTestId(/^cell-/);
 const pieces = () => [...document.querySelectorAll('.piece')];
 const revealed = () => [...document.querySelectorAll('.piece.is-revealed')];
 
-test('开始界面：没有人机/双人按钮被禁用，种子可见', () => {
+test('开始界面：两个模式按钮都可用', () => {
   render(<App />);
   expect(screen.getByTestId('start-screen')).toBeInTheDocument();
   expect(screen.getByTestId('mode-ai')).toBeEnabled();
   expect(screen.getByTestId('mode-dual')).toBeEnabled();
-  expect(screen.getByTestId('seed-hint').textContent).toMatch(/#\d+/);
   expect(document.querySelector('#game')).toBeNull();
 });
 

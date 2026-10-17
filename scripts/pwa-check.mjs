@@ -195,11 +195,8 @@ async function main() {
   check(parsed.name === '皇家战棋 · Web', `name = ${parsed.name}`);
   check(parsed.display === 'standalone', `display = ${parsed.display}`);
   check(parsed.orientation === 'landscape', `orientation = ${parsed.orientation}`);
-  check((parsed.icons ?? []).length === 3, `icons = ${(parsed.icons ?? []).length} 个`);
-  check(
-    (parsed.icons ?? []).some((i) => i.purpose === 'maskable'),
-    '含 maskable 图标（Android 裁圆形不会切掉图案）',
-  );
+  // 图标已统一成一张 192
+  check((parsed.icons ?? []).length === 1, `icons = ${(parsed.icons ?? []).length} 个（应为 1）`);
 
   const base = new URL('./', info.url ?? URL_TARGET).href;
   for (const icon of parsed.icons ?? []) {

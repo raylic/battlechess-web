@@ -28,7 +28,6 @@ export interface SessionOptions {
   openWindow?: (url: string, name: string, features: string) => void;
   /** 双窗口的 client 工厂（jsdom 里没有 SharedWorker，测试可注入假的） */
   createWorker?: (seed: number, side: Side) => Client;
-  debug?: boolean;
 }
 
 export function createSession(
@@ -45,7 +44,7 @@ export function createSession(
     const mySide: Side = side ?? 'red';
     if (!side) {
       // 从开始界面进入：本窗口当红方视角，再开一个窗口当蓝方视角
-      const url = `${window.location.pathname}?mode=dual&side=blue&seed=${seed}${opts.debug ? '&debug=1' : ''}`;
+      const url = `${window.location.pathname}?mode=dual&side=blue&seed=${seed}`;
       (opts.openWindow ?? window.open)(url, 'battlechess-blue', 'width=1030,height=690');
     }
     const makeWorker = opts.createWorker ?? createWorkerClient;
@@ -121,9 +120,20 @@ export function useSession(initialSeed: number, opts: SessionOptions = {}): Sess
     return next;
   }
 
+  /**
+   * 回开始界面，并**顺手换一个新种子**。
+   *
+   * 不换的话，回到开始界面再选模式还是同一盘棋 —— 点"确定"看着像没生效。
+   * 换种子这一步必须在这里做（而不是等 start()），因为开始界面现在不显示种子了，
+   * 用户没有任何其他地方能察觉"这盘其实没换"。
+   */
   function back(): void {
     close(current.current);
     setSession(null);
+    const nextSeed = seedRef.current + 1;
+    seedRef.current = nextSeed;
+    setSeed(nextSeed);
+    syncSeedInUrl(nextSeed);
   }
 
   function restart(): void {

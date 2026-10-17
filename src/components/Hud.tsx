@@ -17,7 +17,7 @@ export function Hud({ view, mode, side, onResign }: HudProps) {
       <div id="heads">
         {(['red', 'blue'] as const).map((which) => (
           <div key={which} className={`head${active(which) ? ' is-active' : ''}`} id={`head-${which}`}>
-            <img src={`${import.meta.env.BASE_URL}assets/head_${which}.png`} alt="" />
+            <img src={`${import.meta.env.BASE_URL}assets/head_${which}.webp`} alt="" />
             <div className="line title">{which === 'red' ? '红方' : '蓝方'}</div>
             <div className="line name">{names[which]}</div>
             <div className="line count">{countText(view, which)}</div>
@@ -28,7 +28,7 @@ export function Hud({ view, mode, side, onResign }: HudProps) {
       <div id="panels">
         {(['red', 'blue'] as const).map((which) => (
           <div className="panel" id={`panel-${which}`} key={which}>
-            <img src={`${import.meta.env.BASE_URL}assets/time.png`} alt="" />
+            <span className="plate" aria-hidden="true" />
             <div className="num" data-testid={`panel-count-${which}`}>
               {view.counts[which]}
             </div>

@@ -81,21 +81,24 @@ test('manifest 引用的图标都真的存在，且声明尺寸 == 文件真实�
   }
 });
 
-test('图标覆盖 Chrome 的安装门槛，并且带一个 maskable 变体', () => {
-  const sizes = new Set(icons.map((i) => i.sizes));
-  expect(sizes.has('192x192'), '缺 192x192（Chrome 的安装门槛之一）').toBe(true);
-  expect(sizes.has('512x512'), '缺 512x512（Chrome 的安装门槛之一）').toBe(true);
-  // Android 会把主屏图标裁成圆形/方形，没有 maskable 变体的话图案边缘会被切掉
-  expect(
-    icons.some((i) => i.purpose === 'maskable'),
-    '缺 purpose: maskable 的图标',
-  ).toBe(true);
+test('图标统一用 192 那一张', () => {
+  // 原先有 192 / 512 / maskable-512 三份。改成只剩 192 是刻意的选择：
+  // 少三个文件。代价要知道 —— 没有 512，Android 主屏会把 192 放大（高分屏略糊）；
+  // 没有 maskable 变体，系统裁圆形/方形时图案边缘可能被切掉一角。
+  // 如果哪天要回退，就补回 icon-512.png 和 icon-maskable-512.png 并重新加进 manifest。
+  expect(icons).toHaveLength(1);
+  expect(icons[0].src).toBe('assets/icon-192.png');
+  expect(icons[0].sizes).toBe('192x192');
 });
 
-test('apple-touch-icon 是 iOS 认的 PNG（iOS 不认 .ico）', () => {
-  const file = join(ROOT, 'public/assets/apple-touch-icon.png');
-  expect(existsSync(file)).toBe(true);
-  expect(pngSize(file)).toEqual({ w: 180, h: 180 });
+test('apple-touch-icon 指向存在的 PNG（iOS 不认 .ico）', () => {
+  // 不写死文件名：index.html 说指哪张就查哪张（现在统一指 192 那张）
+  const m = html.match(/rel="apple-touch-icon"[^>]*href="([^"]+)"/);
+  expect(m, 'index.html 缺 apple-touch-icon').toBeTruthy();
+  const file = join(ROOT, 'public', m![1].replace(/^\//, ''));
+  expect(existsSync(file), `apple-touch-icon 指向了不存在的文件：${m![1]}`).toBe(true);
+  const { w, h } = pngSize(file);
+  expect(w, 'apple-touch-icon 得是正方形').toBe(h);
 });
 
 /* ------------------------------ index.html ------------------------------ */

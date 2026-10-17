@@ -184,11 +184,11 @@ body {
   filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.35));
 }
 .piece .face.back {
-  background-image: url("/assets/unopen.png");
+  background-image: url("/assets/unopen.webp");
   background-size: 100% 100%;
 }
 .piece .face.front {
-  background-image: url("/assets/chess.png");
+  background-image: url("/assets/chess.webp");
   background-size: 600% 200%;
   /* 精灵图 6 列(等级) x 2 行(上红下蓝) */
   background-position: calc(var(--lv) * 20%) calc(var(--side) * 100%);
@@ -270,10 +270,20 @@ body {
   width: 150px;
   height: 100px;
 }
-.panel img {
+.panel .plate {
+  /* 原先是一张 150x100 的位图铭牌（12 KB）——现在用 CSS 画同一个“胶囊铭牌”：
+     浅蓝描边 + 上白下淡蓝的渐变 + 内高光。 */
+  display: block;
   width: 150px;
   height: 100px;
-  display: block;
+  box-sizing: border-box;
+  border-radius: 34px;
+  border: 4px solid #87d3f0;
+  background: linear-gradient(180deg, #ffffff 0%, #f2fbff 42%, #cde8fa 100%);
+  box-shadow:
+    inset 0 3px 9px rgba(255, 255, 255, 0.95),
+    inset 0 -6px 12px rgba(140, 197, 229, 0.5),
+    0 3px 8px rgba(0, 0, 0, 0.22);
 }
 #panel-red {
   left: 45px;
@@ -345,7 +355,7 @@ body {
   width: 145px;
   height: 52px;
   top: 500px;
-  background-image: url("/assets/button_mode.png");
+  background-image: url("/assets/button_mode.webp");
   background-size: 200% 200%;
 }
 .imgbtn.b-mode[data-col="0"] {
@@ -367,7 +377,7 @@ body {
   top: 580px;
   width: 145px;
   height: 52px;
-  background-image: url("/assets/button_giveup.png");
+  background-image: url("/assets/button_giveup.webp");
   background-size: 200% 200%;
   background-position: 100% 0%;
 }
@@ -379,7 +389,7 @@ body {
   top: 300px;
   width: 120px;
   height: 43px;
-  background-image: url("/assets/button_ok.png");
+  background-image: url("/assets/button_ok.webp");
   background-size: 100% 200%;
   background-position: 0% 0%;
 }
@@ -428,49 +438,28 @@ body {
      ⚠ layout.test 会扫源码里出现的一切图片文件名（连注释也算），写注释也别带扩展名。 */
   background: rgba(0, 0, 0, 0.8);
 }
+/* 结算面板 = 共用底板 + 各结果自己的顶栏。
+   原素材是 4 列精灵图（1280x295），靠 background-position 切列；
+   但四列下半部分的面板区域像素完全一致（实测差异 0.00%，只有那行红字不同），
+   于是拆成「4 张顶栏 320x122 + 1 张共用面板 320x173」，脚本见 scripts/split-wait.py。
+   122 这条切线是量出来的，不是猜的 —— 见脚本头部的逐行差异表。 */
 #modal .panel {
   left: 340px;
   top: 78px;
   width: 320px;
   height: 295px;
-  background-image: url("/assets/wait.png");
-  background-size: 400% 100%; /* 精灵图已裁成单行：4 列 x 1 行，cell 320x295 与面板 1:1 */
+  background-image: url("/assets/wait_panel.webp");
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 320px 173px;
 }
-#modal .why,
-#modal .again {
-  z-index: 1;
-}
-#modal .why {
+#modal .panel-top {
   position: absolute;
-  left: 300px;
-  top: 372px;
-  width: 400px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: 600 14px/1 var(--font);
-  color: #ffe9a8;
-  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9);
-}
-#modal .again {
-  position: absolute;
-  left: 300px;
-  top: 404px;
-  width: 400px;
-  text-align: center;
-}
-#modal .again button {
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 208, 75, 0.7);
-  border-radius: 14px;
-  color: #ffe9a8;
-  font: 600 13px/1 var(--font);
-  padding: 7px 14px;
-  cursor: pointer;
-}
-#modal .again button:hover {
-  background: rgba(0, 0, 0, 0.65);
+  left: 0;
+  top: 0;
+  width: 320px;
+  height: 122px;
+  display: block;
 }
 
 /* 对局记录：终局弹窗上的一行小按钮（标记坏棋 / 导出给 AI 复盘） */
@@ -510,22 +499,6 @@ body {
   color: #fff;
   font: 600 14px/1 var(--font);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-}
-
-/* 调试：真面目面板（?debug=1） */
-#truth {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  z-index: 40;
-  pointer-events: none; /* 调试面板是纯展示 */
-  max-width: 460px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.72);
-  color: #9ff;
-  font: 11px/1.5 ui-monospace, Menlo, monospace;
-  white-space: pre;
 }
 
 /* ---------------- 竖屏遮罩：请把手机横过来 ----------------

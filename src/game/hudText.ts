@@ -52,24 +52,33 @@ export function resultWhy(view: Pick<ViewState, 'winner' | 'reason'>): string {
   return `${resultTitle(view.winner)} · ${reason}`;
 }
 
-/** wait.png 是 4 列 x 1 行：红胜 / 蓝胜 / 平局 / 掉线（本作只用前三列）。
- *  原图是 2 行，上面那行是“联网口径”（胜利/失败/平局/掉线，还带积分），而本作不做联网与
- *  积分，整行一处未用，已裁掉 —— 文件从 1280x591 减到 1280x295，cell 正好 320x295，
- *  与 #modal .panel 的显示尺寸 1:1。 */
-export function resultColumn(winner: Side | 'draw' | null): 0 | 1 | 2 {
-  if (winner === 'red') return 0;
-  if (winner === 'blue') return 1;
-  return 2;
+/** 结算图原素材是 4 列 x 1 行：红胜 / 蓝胜 / 平局 / 掉线（本作只用前三列）。
+ *  更早还是 2 行，上面那行是“联网口径”（胜利/失败/平局/掉线，还带积分），而本作不做
+ *  联网与积分，整行一处未用，已裁掉 —— 文件从 1280x591 减到 1280x295。
+ *  ⚠ 注释里也别写素材文件名（带扩展名），layout.test 扫源码时连注释一起扫。 */
+/**
+ * 结算面板顶栏（王冠 + 标题）的素材名。
+ *
+ * 那张结算图原来是 4 列精灵图，靠 background-position 切列。现在拆成了
+ * 「4 张顶栏 + 1 张共用面板」：面板那半部分三列像素完全一致（实测差异 0.00%），
+ * 没必要存三份。生成脚本见 scripts/split-wait.py。
+ *
+ * 写全文件名的好处：layout.test 的"引用的素材都存在"能扫到它们。
+ */
+const RESULT_ART: Record<'red' | 'blue' | 'draw', string> = {
+  red: 'wait_top_red.webp',
+  blue: 'wait_top_blue.webp',
+  draw: 'wait_top_draw.webp',
+};
+
+export function resultArt(winner: Side | 'draw' | null): string {
+  if (winner === 'red') return RESULT_ART.red;
+  if (winner === 'blue') return RESULT_ART.blue;
+  return RESULT_ART.draw;
 }
 
 /** 结算面板的精灵图切片位置（裁成单行后，纵向恒为 0%） */
-export function resultPanelStyle(winner: Side | 'draw' | null): {
-  backgroundSize: string;
-  backgroundPosition: string;
-} {
-  const col = resultColumn(winner);
-  return { backgroundSize: '400% 100%', backgroundPosition: `${(col * 100) / 3}% 0%` };
-}
+
 
 /** 开始界面 / 头像显示用的名字 */
 export function playerNames(mode: Mode): Record<Side, string> {

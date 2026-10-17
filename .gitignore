@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# fetch-assets.sh 捞下来的上游原图（只作参照，不参与构建）
+assets-src

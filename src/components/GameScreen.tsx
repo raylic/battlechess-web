@@ -1,24 +1,19 @@
-import type { Action, GameState, Side, ViewState } from '../core/types';
+import type { Action, Side, ViewState } from '../core/types';
 import type { Mode } from '../game/hudText';
 import { Board } from './Board';
 import { Hud } from './Hud';
 import { ResultModal } from './ResultModal';
 import { Toast } from './Toast';
-import { TruthPanel } from './TruthPanel';
 
 export interface GameScreenProps {
   view: ViewState | null;
   mode: Mode;
   side: Side | null;
   toast: string | null;
-  truth: GameState | null;
   onAction: (action: Action) => void;
   onResign: () => void;
   onOk: () => void;
-  onRestart: () => void;
   onToastDone: () => void;
-  flagged?: boolean;
-  onFlag?: () => void;
   onExport?: () => void;
   recordCount?: number;
 }
@@ -28,14 +23,10 @@ export function GameScreen({
   mode,
   side,
   toast,
-  truth,
   onAction,
   onResign,
   onOk,
-  onRestart,
   onToastDone,
-  flagged,
-  onFlag,
   onExport,
   recordCount,
 }: GameScreenProps) {
@@ -47,19 +38,10 @@ export function GameScreen({
         <>
           <Board view={view} onAction={onAction} />
           <Hud view={view} mode={mode} side={side} onResign={onResign} />
-          <ResultModal
-            view={view}
-            onOk={onOk}
-            onRestart={onRestart}
-            flagged={flagged}
-            onFlag={onFlag}
-            onExport={onExport}
-            recordCount={recordCount}
-          />
+          <ResultModal view={view} onOk={onOk} onExport={onExport} recordCount={recordCount} />
         </>
       ) : null}
       <Toast message={toast} onDone={onToastDone} />
-      <TruthPanel state={truth} />
     </div>
   );
 }

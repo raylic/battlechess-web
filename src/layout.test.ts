@@ -163,7 +163,8 @@ test('引用的素材都存在', () => {
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
     // 两种写法都覆盖：'/assets/a.png' 与模板串 `${A}/a.png`
-    for (const m of text.matchAll(/[\w-]+\.(?:png|jpe?g|ico)/g)) referenced.add(m[0]);
+    // webp / svg 也收进来 —— 素材换成这两种格式后，漏检等于没检
+    for (const m of text.matchAll(/[\w-]+\.(?:png|jpe?g|ico|webp|svg)/g)) referenced.add(m[0]);
   }
   expect(referenced.size).toBeGreaterThanOrEqual(8);
   for (const name of referenced) {
@@ -211,7 +212,7 @@ test('铺满舞台的覆盖层必须关掉指针事件（否则真机上点不�
 });
 
 test('压在棋盘/按钮上方的小装饰层也不该拦截点击', () => {
-  for (const sel of ['#banner', '#toast', '#truth']) {
+  for (const sel of ['#banner', '#toast']) {
     expect(blockOf(sel), `${sel} 是纯展示层`).toMatch(/pointer-events:\s*none/);
   }
 });
