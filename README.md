@@ -88,6 +88,7 @@ src/
 │   ├── useFitScale.ts   整个 1000x650 舞台按视口等比缩放
 │   ├── geometry.ts      棋盘几何常量（CSS 变量的单一事实来源）
 │   ├── boardInteraction.ts 点击策略 + 高亮（纯函数）
+│   ├── panel.ts         侧栏棋子面板：每方 5 行、存活/没翻起/被吃（纯函数）
 │   └── hudText.ts       HUD 文案 + 结算面板映射（纯函数）
 └── components/          Board / Piece / Hud / StartScreen / ResultModal / Toast / TruthPanel
 ```

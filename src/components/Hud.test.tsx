@@ -19,35 +19,40 @@ function setup(v: ViewState, mode: 'ai' | 'hotseat' | 'dual' = 'ai', side: Side 
   return { onResign };
 }
 
-test('两侧面板数字 = 剩余子数', () => {
-  setup(view({ counts: { red: 12, blue: 7 } }));
-  expect(screen.getByTestId('panel-count-red')).toHaveTextContent('12');
-  expect(screen.getByTestId('panel-count-blue')).toHaveTextContent('7');
-  expect(screen.getByText('剩 12 子')).toBeInTheDocument();
-  expect(screen.getByText('剩 7 子')).toBeInTheDocument();
-  expect(screen.getByText('红方剩余')).toBeInTheDocument();
-  expect(screen.getByText('蓝方剩余')).toBeInTheDocument();
+test('侧栏面板：每方 18 个格位，开局全部没翻起', () => {
+  setup(view());
+  for (const side of ['red', 'blue'] as const) {
+    const slots = [...screen.getByTestId(`panel-${side}`).querySelectorAll('.pslot')];
+    expect(slots).toHaveLength(18);
+    expect(slots.every((s) => s.getAttribute('data-state') === 'down')).toBe(true);
+  }
 });
 
-test('头像框：当前回合方高亮，名字按模式变', () => {
+test('侧栏面板：翻开/被吃的棋子换成对应状态', () => {
+  const base = view();
+  const cells = base.cells.map((c, i) =>
+    i < 3 ? { ...c, revealed: true, side: 'red' as const, level: 5 as const } : c,
+  );
+  setup(view({ cells, fallen: { red: [1, 0, 0, 0, 0, 1], blue: [0, 0, 0, 0, 0, 0] } }));
+  const red = screen.getByTestId('panel-red');
+  expect(red.querySelectorAll('.pslot.is-alive')).toHaveLength(3);
+  expect(red.querySelectorAll('.pslot.is-dead')).toHaveLength(2);
+  expect(screen.getByTestId('panel-blue').querySelectorAll('.pslot.is-down')).toHaveLength(18);
+});
+
+test('头像框：只高亮当前回合方，框内不再有文字', () => {
   const headRed = () => document.querySelector('#head-red') as HTMLElement;
   const headBlue = () => document.querySelector('#head-blue') as HTMLElement;
-  const nameOf = (head: HTMLElement) => head.querySelector('.line.name')!.textContent;
 
   const { unmount } = render(<Hud view={view()} mode="ai" side="red" onResign={() => {}} />);
   expect(headRed().className).toContain('is-active');
   expect(headBlue().className).not.toContain('is-active');
-  expect(nameOf(headRed())).toBe('你');
-  expect(nameOf(headBlue())).toBe('电脑');
+  expect(headRed().textContent).toBe('');
   unmount();
 
   render(<Hud view={view({ turn: 'blue' })} mode="hotseat" side={null} onResign={() => {}} />);
   expect(headBlue().className).toContain('is-active');
   expect(headRed().className).not.toContain('is-active');
-  expect(nameOf(headRed())).toBe('红方');
-  expect(nameOf(headBlue())).toBe('蓝方');
-  expect(headRed().querySelector('.line.title')!.textContent).toBe('红方');
-  expect(headRed().querySelector('.line.count')!.textContent).toBe('剩 18 子');
 });
 
 test('回合条文案', () => {

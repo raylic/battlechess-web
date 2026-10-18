@@ -36,10 +36,6 @@ export function footText(view: ViewState): string {
   return `${base} · 走过 ${MIN_GIVEUP} 步后才能认输`;
 }
 
-export function countText(view: ViewState, side: Side): string {
-  return `剩 ${view.counts[side]} 子`;
-}
-
 export function resultTitle(winner: Side | 'draw' | null): string {
   if (winner === 'draw') return '和局';
   if (winner === 'red') return '红方获胜';
@@ -75,12 +71,4 @@ export function resultArt(winner: Side | 'draw' | null): string {
   if (winner === 'red') return RESULT_ART.red;
   if (winner === 'blue') return RESULT_ART.blue;
   return RESULT_ART.draw;
-}
-
-/** 结算面板的精灵图切片位置（裁成单行后，纵向恒为 0%） */
-
-
-/** 开始界面 / 头像显示用的名字 */
-export function playerNames(mode: Mode): Record<Side, string> {
-  return mode === 'ai' ? { red: '你', blue: '电脑' } : { red: '红方', blue: '蓝方' };
 }

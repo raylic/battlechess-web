@@ -9,10 +9,8 @@ import type { Side, ViewState } from '../core/types';
 import { viewFor } from '../core/visibility';
 import {
   bannerText,
-  countText,
   footText,
   isMyTurn,
-  playerNames,
   resignDisabled,
   resultArt,
   resultTitle,
@@ -25,12 +23,9 @@ const view = (patch: Partial<ViewState> = {}, side: Side = 'red'): ViewState => 
   ...patch,
 });
 
-test('sideName / playerNames', () => {
+test('sideName', () => {
   expect(sideName('red')).toBe('红方');
   expect(sideName('blue')).toBe('蓝方');
-  expect(playerNames('ai')).toEqual({ red: '你', blue: '电脑' });
-  expect(playerNames('hotseat')).toEqual({ red: '红方', blue: '蓝方' });
-  expect(playerNames('dual')).toEqual({ red: '红方', blue: '蓝方' });
 });
 
 test('isMyTurn：热座恒为真，分视角看回合，终局恒为假', () => {
@@ -73,11 +68,6 @@ test('底部提示：20 步前会提示还不能认输，之后不再提示', ()
 
   const late = footText(view({ step: MIN_GIVEUP, noEat: 0 }));
   expect(late).not.toContain('才能认输');
-});
-
-test('countText', () => {
-  expect(countText(view({ counts: { red: 12, blue: 7 } }), 'red')).toBe('剩 12 子');
-  expect(countText(view({ counts: { red: 12, blue: 7 } }), 'blue')).toBe('剩 7 子');
 });
 
 test('结算标题', () => {
