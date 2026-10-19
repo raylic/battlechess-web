@@ -14,14 +14,17 @@
 //      仍失败就退回随机 id —— 这时只能靠 console 里的链接，不能靠猜。
 //   2. 建连顺序：guest → host `connect()` → 第一条消息必须是 `join`（带 seed 和 side）
 //      → 校验通过才 `authority.subscribe(side, ...)`，之后双向直通。
-//   3. 没有 TURN / 没有自建信令：用 PeerJS 公共云（`0.peerjs.com` + 它自带的 TURN）。
-//      想自建时只换 `createPeer`，协议和上层一行不改。
+//   3. 信令走 PeerJS 公共云（`0.peerjs.com`）；**中继（TURN）必须自己配** —— 免费公共 TURN
+//      实测都拿不到 relay candidate（见 ice.ts 的注释），不配就只能在同网段/开放 NAT 下连。
+//      配置走 `VITE_TURN_ENDPOINT`（短时凭据）或 `VITE_TURN_*`（静态凭据），
+//      凭据端点的实现见 `workers/turn-credentials.js`。想自建信令时换 `createPeer` 即可。
 
 import Peer from 'peerjs';
 
 import type { Authority } from '../core/authority';
 import { isRecord } from '../core/reduce';
 import type { ClientMsg, ServerMsg, Side } from '../core/types';
+import { iceEnvFromImportMeta, resolveIceServers, type IceServer } from './ice';
 import type { Client } from './local';
 import { hostIdForSeed } from './roomId';
 
@@ -66,7 +69,17 @@ export interface PeerLike {
 
 export type PeerFactory = (id: string) => PeerLike;
 
-const defaultPeerFactory: PeerFactory = (id) => new Peer(id) as unknown as PeerLike;
+/**
+ * 生产用的 Peer：带上 ICE 配置（STUN + TURN）。
+ *
+ * 中继凭据是短时的，所以这一步是**异步**的；拿不到就退回只有 STUN，
+ * 此时连接会表现为"同网段能连、跨网络连不上"（和没配 TURN 时一样）。
+ */
+async function defaultPeerFactory(): Promise<PeerFactory> {
+  const ice = await resolveIceServers({ env: iceEnvFromImportMeta(import.meta.env) });
+  const iceServers: IceServer[] = ice.servers;
+  return (id) => new Peer(id, { config: { iceServers } }) as unknown as PeerLike;
+}
 
 function randomSuffix(): string {
   const raw =
@@ -185,7 +198,7 @@ export async function attachPeerHost(
   mySide: Side,
   opts: AttachPeerHostOptions = {},
 ): Promise<PeerHostHandle> {
-  const factory = opts.createPeer ?? defaultPeerFactory;
+  const factory = opts.createPeer ?? (await defaultPeerFactory());
   const handshakeMs = opts.timeoutMs ?? HANDSHAKE_TIMEOUT_MS;
   const peer = await openHostPeer(factory, opts.hostId ?? hostIdForSeed(seed));
   const hostId = peer.id ?? opts.hostId ?? hostIdForSeed(seed);
@@ -310,7 +323,7 @@ function createBufferedClient(side: Side, send: (msg: ClientMsg) => void, close:
 }
 
 export async function createPeerClient(opts: CreatePeerClientOptions): Promise<Client> {
-  const factory = opts.createPeer ?? defaultPeerFactory;
+  const factory = opts.createPeer ?? (await defaultPeerFactory());
   const timeoutMs = opts.timeoutMs ?? HANDSHAKE_TIMEOUT_MS;
   const peer = factory(`bc-${randomSuffix()}`);
   let closed = false;
@@ -319,6 +332,13 @@ export async function createPeerClient(opts: CreatePeerClientOptions): Promise<C
     await waitOpen(peer, timeoutMs);
 
     const conn = peer.connect(opts.hostId, { reliable: true });
+    // ICE 走到哪一步了：超时时靠它区分"对方没开房"和"网络打不通"
+    let iceState = '';
+    const iceable = conn as unknown as { on?: (event: string, handler: (state: string) => void) => void };
+    iceable.on?.('iceStateChanged', (state) => {
+      iceState = state;
+    });
+
     await new Promise<void>((resolve, rejectPromise) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -344,7 +364,20 @@ export async function createPeerClient(opts: CreatePeerClientOptions): Promise<C
       conn.on('open', () => settle());
       conn.on('error', () => settle(new Error('和房主建立连接失败')));
 
-      timer = setTimeout(() => settle(new Error('对方没有开房（连接超时）')), timeoutMs);
+      // 超时文案分三种：ICE 失败（要 TURN）/ ICE 一直协商中 / 对方根本没应答
+      timer = setTimeout(
+        () =>
+          settle(
+            new Error(
+              iceState === 'failed' || iceState === 'disconnected'
+                ? '网络打洞失败：需要 TURN 中继（还没配好，或已过期）'
+                : iceState === 'checking' || iceState === 'new'
+                  ? '连不上对方：双方网络都受限，需要 TURN 中继'
+                  : '对方没有开房，或邀请链接已失效（连接超时）',
+            ),
+          ),
+        timeoutMs,
+      );
     });
 
     const client = createBufferedClient(

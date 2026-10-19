@@ -413,7 +413,28 @@ test('连上了但连接一直不 open、也不报错：走超时文案', async 
   const peer = new ManualPeer('bc-me');
   const pending = manualClient(peer, 30);
   peer.emit('open', peer.id);
-  await expect(pending).rejects.toThrow('对方没有开房（连接超时）');
+  // 没收到任何 ICE 状态 → 最可能是"对方没开房/链接过期"，而不是打洞失败
+  await expect(pending).rejects.toThrow('对方没有开房，或邀请链接已失效（连接超时）');
+  expect(peer.destroyed).toBe(true);
+});
+
+test('ICE 卡在 checking：超时文案指向 TURN 中继（跨网络连不上就是这么来的）', async () => {
+  const peer = new ManualPeer('bc-me');
+  const pending = manualClient(peer, 40);
+  peer.emit('open', peer.id);
+  await tick(); // 等 createPeerClient 真的走到 connect()
+  peer.conn.emit('iceStateChanged', 'checking');
+  await expect(pending).rejects.toThrow('双方网络都受限，需要 TURN 中继');
+  expect(peer.destroyed).toBe(true);
+});
+
+test('ICE 直接 failed：文案直说打洞失败 + 中继没配好', async () => {
+  const peer = new ManualPeer('bc-me');
+  const pending = manualClient(peer, 40);
+  peer.emit('open', peer.id);
+  await tick();
+  peer.conn.emit('iceStateChanged', 'failed');
+  await expect(pending).rejects.toThrow('网络打洞失败：需要 TURN 中继');
   expect(peer.destroyed).toBe(true);
 });
 

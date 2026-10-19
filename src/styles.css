@@ -487,6 +487,38 @@ body {
   width: 100%;
   height: 100%;
 }
+/* 欢迎语：压在立绘中间那块**空着的暗红盾牌**上。
+   位置是从图里量出来的：盾牌暗红区在 y 262~390 之间最宽（460~477px），再往下就收窄成尖角了。
+   所以 left 270 / width 460 / top 262 —— 换立绘就得重量一次。 */
+#start .welcome {
+  position: absolute;
+  left: 275px;
+  top: 254px;
+  width: 450px;
+  font: 500 13.5px/1.66 var(--font);
+  letter-spacing: 0.2px;
+  color: #f8ebd0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+#start .welcome p {
+  margin: 0;
+  /* 中文段落的老规矩：首行缩进两个字 */
+  text-indent: 2em;
+}
+/* 规则那段紧随正文，字号退一档 */
+#start .welcome .welcome-rules {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: #ecdcb8;
+}
+/* 授权那句压在最下面、居中、不缩进 —— 它不是段落，是署名 */
+#start .welcome .welcome-license {
+  margin-top: 5px;
+  text-indent: 0;
+  text-align: center;
+  font-size: 12px;
+  color: #dcc79f;
+}
 
 /* ---------------- 弹窗 / 结算 ---------------- */
 #modal {

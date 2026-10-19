@@ -21,7 +21,7 @@ pnpm build     # tsc -b && vite build → dist/（约 1.3 MB）
 
 - **测试 / 构建都显式钉 `NODE_ENV`**（`package.json` 脚本里），因为有些 shell 导出了
   `NODE_ENV=production`，那会让 React 解析到生产构建、`React.act` 不存在、RTL 全线报错。不要去掉。
-- `pnpm assets` 会把上游原图**直接覆盖** `public/assets/` 里流水线产出的成品，先看 ASSETS.md 再跑。
+- `pnpm assets` 会把上游原图**直接覆盖** `public/assets/` 里流水线产出的成品，跑之前先确认（数值见 README 的「素材与许可」）。
 
 ### 单跑一个测试
 
@@ -144,20 +144,31 @@ URL 参数：`?mode=ai|hotseat|dual`、`?side=red|blue`、`?seed=123`、`?ai=sea
 2. **圆盘要盖住金环内洞。** `head_*.webp` 的洞实测是半径 30.5 的正圆（bbox 70..130 / 15..75），
    圆盘取 62 就是「整块盖住、又不压金环」的那个数；设计稿里的 64×66 会压到环，别照抄。
 
+### 联机只靠局域网？先看 ICE，不要怀疑信令
+
+`?mode=online` 跨网络连不上时，**先查 `src/transport/ice.ts` 有没有拿到中继**，不要去看房间号/邀请链接：
+信令（`0.peerjs.com`）很少坏，坏的都是 ICE —— 对称 NAT 必须有 TURN，没有就只能同网段。
+
+- 现在的来源优先级：`VITE_TURN_ENDPOINT`（短时凭据，扫 `workers/turn-credentials.js`）→
+  `VITE_TURN_*` 静态凭据 → 只剩 STUN。
+- **别再往代码里塞“公共免费 TURN”**：PeerJS 自带的 `0.peerjs.com:3478` 和 Open Relay 老静态账号
+  实测都拿不到 `relay` candidate（2026-02 用 headless Chrome 验的：只有 host + srflx）。
+- 判据看失败文案：`网络打洞失败` / `双方网络都受限` = ICE 问题；`房间不存在` = 房间问题。
+
 ## 6. 素材与文档
 
-- **`ASSETS.md` 是素材的当前事实来源**（14 个文件、体积、每个文件的改造手段）。
+- **素材清单与体积以 `README.md` 的「素材与许可」为准**（用户不要单独的 ASSETS.md —— 别再建它）。
   增删 `public/assets/` 里的文件要同步改它；`pnpm test` 里有"每个引用到的素材必须存在"的断言。
 - 素材版权：棋子/头像含 **QQ 宠物 IP**，来自原作者。仓库公开只为托管试玩，**不得商用**；
   权利人要求时立即移除。代码 MIT。
 - 改造只用**无损**手段（WebP 无损 / 拆图去重 / 抹重复文字）；量化试过，体积再降 40% 但肉眼变糊，已回退。
 
-### README 有几处已过期（以代码与 ASSETS.md 为准）
+### README 有几处已过期（以代码为准）
 
 | README 段落 | 现状 |
 |---|---|
 | §1 `?debug=1` / §3 架构图里的 `TruthPanel` | 面板与组件已删除，README 表格已同步 |
 | §7 终局弹窗"⭐ 标记这局"、「导出对局记录」 | 均已删除；只剩「确定」（回开始界面并换种子） |
-| §9 `scripts/make-icons.py`、素材体积表 | 现为 `scripts/make-icon.py`；体积见 ASSETS.md |
+| §9 `scripts/make-icons.py`、素材体积表 | 现为 `scripts/make-icon.py`；体积见 README「素材与许可」 |
 
 改完功能后顺手把 README 对应段落更新，不要越攒越多。

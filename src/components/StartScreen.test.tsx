@@ -18,6 +18,17 @@ test('第一枚按钮进人机对战，第二枚进联机大厅', () => {
   expect(onChoose).toHaveBeenCalledTimes(1);
 });
 
+test('欢迎语：来历 / 两个按钮怎么用 / 免费开源不许商用，四件事都在', () => {
+  render(<StartScreen notice={null} onChoose={() => {}} onOnline={() => {}} />);
+  const welcome = screen.getByTestId('welcome').textContent ?? '';
+  // 这三句是产品要求，别顺手精简
+  expect(welcome, '要说清来历').toContain('已停服');
+  expect(welcome, '要指路两枚按钮').toContain('左侧按钮');
+  expect(welcome).toContain('右侧按钮');
+  expect(welcome, '要有授权口径').toContain('非官方');
+  expect(welcome).toContain('请勿商用或二次分发');
+});
+
 test('降级提示只在需要时出现', () => {
   const { unmount } = render(<StartScreen notice={null} onChoose={() => {}} onOnline={() => {}} />);
   expect(screen.queryByTestId('start-notice')).toBeNull();

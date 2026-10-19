@@ -39,6 +39,27 @@ const pieces = () => [...document.querySelectorAll('.piece')];
 const revealed = () => [...document.querySelectorAll('.piece.is-revealed')];
 
 /**
+ * 找一张**现在真能翻**的格子。
+ *
+ * 之前这里硬编码 `cell-0-0`，可是「我执蓝、AI 先手」时 AI 第一手就可能把 0,0 翻掉 ——
+ * 于是点击是空操作，步数不涨，测试随机红灯（约 1/4 的种子）。判据用 DOM 上的两个事实：
+ *   · 这格上有棋子，且还没翻开（`.piece` 的 `data-at` + 缺 `is-revealed`）
+ *   · 这格此刻是 `is-hoverable`（`cellFlags` 算出来的"可操作"，翻棋 / 选子都算）
+ */
+function flippableCell(): HTMLElement {
+  const revealed = new Set(
+    [...document.querySelectorAll('.piece.is-revealed')].map((p) => (p as HTMLElement).dataset.at ?? ''),
+  );
+  const candidates = cells().filter((cell) => {
+    const at = cell.getAttribute('data-cell') ?? '';
+    return cell.classList.contains('is-hoverable') && !revealed.has(at);
+  });
+  const cell = candidates[0];
+  if (!cell) throw new Error('找不到可翻的格子');
+  return cell as HTMLElement;
+}
+
+/**
  * 等到"轮到我"。
  *
  * 颜色现在是**种子派生**的（偶数红、奇数蓝），`?mode=ai` 进来时种子是随机的，
@@ -47,8 +68,9 @@ const revealed = () => [...document.querySelectorAll('.piece.is-revealed')];
  */
 async function waitMyTurn() {
   await waitFor(() => expect(cells()).toHaveLength(36));
+  // 8000 而不是 4000：AI 思考是真实计时器（420ms/步），整套测试并行跑满 CPU 时余量不够
   await waitFor(() => expect(screen.getByTestId('banner')).toHaveTextContent('轮到你了'), {
-    timeout: 4000,
+    timeout: 8000,
   });
 }
 
@@ -77,14 +99,15 @@ test('人机对战：翻棋 → AI 应招 → 步数累加，认输按钮初期�
   const steps = () => Number(/已走 (\d+) 步/.exec(document.querySelector('#foot')!.textContent!)![1]);
   const s0 = steps();
 
-  // 玩家翻一张暗子
-  fireEvent.click(screen.getByTestId('cell-0-0'));
+  // 玩家翻一张暗子（不能硬编码 0,0：AI 先手时它可能已经被翻开了）
+  fireEvent.click(flippableCell());
   await waitFor(() => expect(steps()).toBe(s0 + 1));
   expect(screen.getByTestId('banner')).toHaveTextContent('电脑思考中…');
 
   // AI 思考 420ms 后应招
+  // 8000 而不是 4000：AI 思考是真实计时器（420ms/步），整套测试并行跑满 CPU 时余量不够
   await waitFor(() => expect(screen.getByTestId('banner')).toHaveTextContent('轮到你了'), {
-    timeout: 4000,
+    timeout: 8000,
   });
   await waitFor(() => expect(steps()).toBe(s0 + 2));
   expect(pieces(), '现有 UI 下没有任何棋子会消失').toHaveLength(36);
@@ -131,7 +154,7 @@ test('不是自己回合时，点棋盘不会有任何进展', async () => {
   fireEvent.click(screen.getByTestId('mode-ai'));
   await waitMyTurn();
 
-  fireEvent.click(screen.getByTestId('cell-0-0'));
+  fireEvent.click(flippableCell());
   await waitFor(() => expect(screen.getByTestId('banner')).toHaveTextContent('电脑思考中…'));
 
   // 趁着轮到电脑，连点几下：不该有任何 effect（也不能抛错）。
@@ -149,8 +172,9 @@ test('棋子按 id 复用节点：AI 走完后仍是同一批 DOM 节点（动�
 
   const before = pieces();
   fireEvent.click(screen.getByTestId('cell-0-0'));
+  // 8000 而不是 4000：AI 思考是真实计时器（420ms/步），整套测试并行跑满 CPU 时余量不够
   await waitFor(() => expect(screen.getByTestId('banner')).toHaveTextContent('轮到你了'), {
-    timeout: 4000,
+    timeout: 8000,
   });
 
   const after = pieces();
