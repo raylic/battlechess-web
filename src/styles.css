@@ -492,32 +492,43 @@ body {
    所以 left 270 / width 460 / top 262 —— 换立绘就得重量一次。 */
 #start .welcome {
   position: absolute;
-  left: 275px;
-  top: 254px;
-  width: 450px;
-  font: 500 13.5px/1.66 var(--font);
+  /* 横向按立绘里盾牌的实际中心（508，不是画布中心 500）对中 */
+  left: 300px;
+  top: 268px;
+  width: 416px;
+  font: 500 13px/1.64 var(--font);
   letter-spacing: 0.2px;
+  text-align: center;
   color: #f8ebd0;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 #start .welcome p {
   margin: 0;
-  /* 中文段落的老规矩：首行缩进两个字 */
-  text-indent: 2em;
+  /* 断点已经用 <br> 写死（版面宽度是固定的），别再让平衡/优化算法插手 */
+  text-wrap: nowrap;
 }
-/* 规则那段紧随正文，字号退一档 */
+/* 规则那段紧随正文：字号退一档、颜色也退一档，靠间距而不是缩进把两段分开 */
 #start .welcome .welcome-rules {
-  margin-top: 4px;
-  font-size: 12.5px;
-  color: #ecdcb8;
-}
-/* 授权那句压在最下面、居中、不缩进 —— 它不是段落，是署名 */
-#start .welcome .welcome-license {
-  margin-top: 5px;
-  text-indent: 0;
-  text-align: center;
+  margin-top: 7px;
   font-size: 12px;
-  color: #dcc79f;
+  color: #ecdcb8;
+  /* 已经用 <br> 手动断行了，不需要平衡算法再插手 */
+  text-wrap: nowrap;
+}
+/* 授权那句是"署名"，不是段落：
+   不缩进、居中、字号再退一档，上面压一条很短的金色分隔线把它和正文断开。 */
+#start .welcome .welcome-license {
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: #d8c29a;
+}
+#start .welcome .welcome-license::before {
+  content: '';
+  display: block;
+  width: 132px;
+  margin: 0 auto 7px;
+  border-top: 1px solid rgba(255, 210, 74, 0.32);
 }
 
 /* ---------------- 弹窗 / 结算 ---------------- */
