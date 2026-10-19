@@ -26,9 +26,7 @@ WANTED=(
   head_red.png           # 左侧红方头像
   head_blue.png          # 右侧蓝方头像
   time.png               # 双方剩余子数面板
-  button_mode.png        # 开始界面两个模式按钮
-  button_giveup.png      # 认输按钮
-  button_ok.png          # 结算面板 OK
+  # 按钮不再需要烤图：全站统一 button_clean.png（120x86 两态）+ CSS 文本
   wait.png               # 结算面板（4 列 × 2 行：红胜/蓝胜/和局）
   icon.ico               # favicon
 )

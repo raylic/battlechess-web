@@ -42,9 +42,11 @@ export class Authority {
   subscribe(side: Side | null, onmessage: (msg: ServerMsg) => void): () => void {
     const sub: Subscriber = { side, onmessage };
     this.subs.add(sub);
-    setTimeout(() => {
-      if (this.subs.has(sub)) this.emit(sub);
-    }, 0);
+    // 初始快照**同步**下发：原来走 setTimeout(0)，首帧渲染时 view 还是 null，
+    // 于是"进游戏闪一下空背景、棋盘随后才出现"。同步下发之后，useGame 在 layout effect
+    // 里挂上 onmessage 的那一刻就拿到快照，setState 发生在 paint 之前，一帧都不闪。
+    // （transport 的 client 负责缓冲：挂 onmessage 之前到达的消息不能丢，见 local.ts）
+    this.emit(sub);
     return () => {
       this.subs.delete(sub);
     };

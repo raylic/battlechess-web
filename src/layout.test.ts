@@ -132,22 +132,37 @@ test('棋盘不与剩余子数面板、回合条、认输按钮重叠', () => {
   // 回合条 y 112~146
   expect(quad.tl.y).toBeGreaterThan(146);
 
-  // 认输按钮在 (427,580) 145x52 → 底边 632
+  // 认输按钮在 (440,584) 120x43 → 底边 627
   const giveup = blockOf('.imgbtn.b-giveup');
   const gTop = num(giveup, /top:\s*([\d.]+)px/);
   const gLeft = num(giveup, /left:\s*([\d.]+)px/);
-  const gWidth = num(giveup, /width:\s*([\d.]+)px/);
-  expect(gTop).toBe(580);
-  expect(gLeft).toBe(427);
-  expect(gWidth).toBe(145);
+  const gWidth = num(blockOf('.imgbtn.b-clean'), /width:\s*([\d.]+)px/);
+  expect(gTop).toBe(584);
+  expect(gLeft).toBe(440);
+  expect(gWidth, '全站按钮只有一种尺寸（button_clean 120x43）').toBe(120);
   expect(quad.bl.y, '棋盘下缘压到认输按钮了').toBeLessThan(gTop!);
 });
 
 test('开始界面的两个模式按钮在棋盘区域之外（它俩是独立的一屏）', () => {
-  const mode = blockOf('.imgbtn.b-mode');
-  expect(num(mode, /top:\s*([\d.]+)px/)).toBe(500);
-  expect(num(blockOf('.imgbtn.b-mode[data-col="0"]'), /left:\s*([\d.]+)px/)).toBe(300);
-  expect(num(blockOf('.imgbtn.b-mode[data-col="1"]'), /left:\s*([\d.]+)px/)).toBe(555);
+  const a = blockOf('.imgbtn.b-start-a');
+  const b = blockOf('.imgbtn.b-start-b');
+  expect(num(a, /top:\s*([\d.]+)px/)).toBe(500);
+  expect(num(b, /top:\s*([\d.]+)px/)).toBe(500);
+  expect(num(a, /left:\s*([\d.]+)px/)).toBe(300);
+  expect(num(b, /left:\s*([\d.]+)px/)).toBe(555);
+
+  // 四字按钮回到原素材的 145x52（button_clean 等比放大），两枚之间才留得出间隙
+  const long = blockOf('.imgbtn.b-clean.is-long');
+  expect(num(long, /width:\s*([\d.]+)px/)).toBe(145);
+  expect(num(long, /height:\s*([\d.]+)px/)).toBe(52);
+  expect(num(long, /font-weight(?:\s*|:\s*)(\d+)/)).toBe(400);
+});
+
+test('结算面板不能复用 HUD 的 .panel（会多出一圈蓝框）', () => {
+  const panel = blockOf('#modal .result-panel');
+  expect(panel).toContain('wait_panel.webp');
+  expect(panel, '结算面板只要那张共用底板，不要边框/渐变').not.toMatch(/border(-radius)?:\s*[1-9]/);
+  expect(css, '结算面板别再用 .panel 这个类名').not.toMatch(/#modal\s+\.panel\s*\{/);
 });
 
 test('引用的素材都存在', () => {
@@ -190,6 +205,8 @@ test('铺满舞台的覆盖层必须关掉指针事件（否则真机上点不�
     '#bg', // 排在棋盘之前画，在下面
     '#board', // 棋盘本体，格子就在它里
     '#start', // 开始界面那一屏，两个模式按钮就在它里
+    '#lobby', // 联机大厅那一屏：和 #start 一样是整屏替换，不是盖在棋盘上的浮层
+    '#reveal', // 开局揭晓颜色：故意挡住这 1.5 秒里的误点，播完就卸载
     '#modal', // 终局弹窗，本来就该挡住棋盘
   ]);
   const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');

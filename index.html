@@ -9,16 +9,48 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#0d1117" />
+    <!-- 首帧底色：CSS 文件要到 <head> 末尾才生效，图片更晚。
+         这两行保证"还没画出任何东西"时画布已经是黑的 —— 之前是浏览器默认白底，
+         加载首页那一瞬间会看到白/黑的闪跳。color-scheme 顺带把表单控件、滚动条也压成暗色。 -->
+    <meta name="color-scheme" content="dark" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #000;
+      }
+      /* 关键：竖屏遮罩的标记就在 body 里，而主样式表（dev 下是 JS 注入）可能比它晚到。
+         没样式的那一两帧里它会以"裸 SVG"出现 —— color-scheme:dark 把默认文字刷成白色，
+         配合黑底就是一个巨大的白色手机图标，也就是首屏那个"黑白图案"。
+         这里先把它按死，主样式表到位后由 @media (display-mode:standalone) 那组规则接管。 */
+      #rotate {
+        display: none;
+      }
+    </style>
 
     <!-- 图标统一用 192 那一张：favicon、apple-touch-icon、manifest 全是它 -->
-    <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png" />
-    <link rel="apple-touch-icon" href="/assets/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./assets/icon-192.png" />
+    <link rel="apple-touch-icon" href="./assets/icon-192.png" />
 
     <!-- PWA：可安装（装到主屏 / 桌面后独立窗口打开，且被系统锁成横屏） -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="皇家战棋" />
+
+    <!-- 首帧就要对的两件事：
+         ① 舞台缩放 --fit：原来只在 useFitScale 的 useEffect 里写，首帧仍是 1 倍，
+            大窗口下会看到舞台"先小一圈再弹开"（闪一帧）。这里在 CSS 生效前先算一次。
+            尺寸 1000x650 与 styles.css 里 #app 的宽高是同一对常数。
+         ② 两张首屏大图先预载，避免"先黑一下再出图"。 -->
+    <script>
+      document.documentElement.style.setProperty(
+        '--fit',
+        String(Math.min(window.innerWidth / 1000, window.innerHeight / 650)),
+      );
+    </script>
+    <link rel="preload" as="image" href="./assets/bg.jpg" />
+    <link rel="preload" as="image" href="./assets/begin.webp" />
 
     <title>皇家战棋 · Web</title>
   </head>
@@ -40,6 +72,17 @@
       <p>请把手机横过来</p>
       <p class="sub">本作是按横屏（1000×650）画的，竖屏下棋盘会缩得点不准</p>
     </div>
+
+    <!-- 两帧之后才允许竖屏遮罩出现：文档刚解析时 innerWidth/innerHeight 还是 0，
+         (orientation: portrait) + (pointer: coarse) 会误判，加载首页时会闪一下那个
+         白手机图标。CSS 侧的门在 styles.css 的 @media 里（html.ready #rotate）。 -->
+    <script>
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          document.documentElement.classList.add('ready');
+        });
+      });
+    </script>
 
     <script type="module" src="/src/main.tsx"></script>
   </body>

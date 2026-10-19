@@ -1,7 +1,8 @@
 // 传输层契约测试。
 // 这一层最容易被两个细节坑到：
-//   1) 初始状态必须"异步"下发（原生版曾经同步 emit，结果第一条 state 在调用方挂
-//      onmessage 之前就发完了，棋盘整块渲染不出来）
+//   1) 初始状态绝不能在调用方挂 onmessage 之前丢掉（原生版就是这样，棋盘整块渲染不出来）。
+//      现在的做法是"同步 emit + client 缓冲"，挂上 onmessage 的那一刻补发 ——
+//      顺带让首帧就有棋盘，不会先闪一下空背景
 //   2) restart 要真的换种子 / close 要真的退订（原生版审计里这两条变异都存活）
 
 import { expect, test } from 'vitest';
@@ -22,15 +23,14 @@ function collect(client: Client) {
 const states = (msgs: ServerMsg[]): ViewState[] =>
   msgs.filter((m): m is { t: 'state'; state: ViewState } => m.t === 'state').map((m) => m.state);
 
-test('connect() 之后必须"异步"收到初始状态，不能同步回调', async () => {
+test('初始快照：connect 期间不回调，挂上 onmessage 的那一刻同步补发', async () => {
   const transport = createLocalTransport(4242);
   const client = transport.connect('red');
+
   const msgs = collect(client);
-
-  expect(msgs.length, 'connect 期间不该同步回调（那时 onmessage 还没挂上）').toBe(0);
-
+  expect(msgs.length, '挂 onmessage 时就该补发（首帧不能闪空背景）').toBe(1);
   await tick();
-  expect(msgs.length).toBe(1);
+  expect(msgs.length, '补发之后不该再来一遍').toBe(1);
   expect(msgs[0]!.t).toBe('state');
   const view = states(msgs)[0]!;
   expect(view.cells.length).toBe(36);

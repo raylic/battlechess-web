@@ -40,14 +40,15 @@ test('侧栏面板：翻开/被吃的棋子换成对应状态', () => {
   expect(screen.getByTestId('panel-blue').querySelectorAll('.pslot.is-down')).toHaveLength(18);
 });
 
-test('头像框：只高亮当前回合方，框内不再有文字', () => {
+test('名牌：只高亮当前回合方，身份写"玩家/电脑"而不是颜色', () => {
   const headRed = () => document.querySelector('#head-red') as HTMLElement;
   const headBlue = () => document.querySelector('#head-blue') as HTMLElement;
 
   const { unmount } = render(<Hud view={view()} mode="ai" side="red" onResign={() => {}} />);
   expect(headRed().className).toContain('is-active');
   expect(headBlue().className).not.toContain('is-active');
-  expect(headRed().textContent).toBe('');
+  expect(headRed().textContent).toContain('玩家');
+  expect(headBlue().textContent).toContain('电脑');
   unmount();
 
   render(<Hud view={view({ turn: 'blue' })} mode="hotseat" side={null} onResign={() => {}} />);

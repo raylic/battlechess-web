@@ -41,19 +41,13 @@ test('和局 → 平局那张', () => {
 test('确定 → 触发 onOk', () => {
   const onOk = vi.fn();
   render(<ResultModal view={finished('red')} onOk={onOk} />);
-  fireEvent.click(document.querySelector('#ok') as HTMLElement);
+  fireEvent.click(screen.getByRole('button', { name: '确定' }));
   expect(onOk).toHaveBeenCalledTimes(1);
 });
 
-test('对局记录：导出按钮挂在终局弹窗上', () => {
-  const onExport = vi.fn();
-  render(<ResultModal view={finished('red')} onOk={() => {}} onExport={onExport} recordCount={3} />);
-  fireEvent.click(screen.getByTestId('export-log'));
-  expect(onExport).toHaveBeenCalledTimes(1);
-  expect(screen.getByTestId('export-log')).toHaveTextContent('导出对局记录（3）');
-});
-
-test('没有 onExport 时不渲染记录按钮', () => {
+test('弹窗里只有一个「确定」按钮，不再有导出对局记录那一行', () => {
   render(<ResultModal view={finished('red')} onOk={() => {}} />);
+  expect(screen.getAllByRole('button')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: '确定' })).toBeInTheDocument();
   expect(screen.queryByTestId('log-row')).toBeNull();
 });

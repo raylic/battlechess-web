@@ -36,7 +36,8 @@ body {
   /* 移动端：下拉刷新 / 边缘回弹 / 橡皮筋都要掐掉 —— 全屏画布上误触一次下拉刷新
      就等于重开一局，这个坑在手机上非常容易踩 */
   overscroll-behavior: none;
-  background: #0d1117;
+  /* 纯黑：舞台（1000x650）之外全是这一层，任何"还没画出图"的空档都不该露出别的底色 */
+  background: #000;
   color: #fff;
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
@@ -53,6 +54,7 @@ body {
   top: 50%;
   width: 1000px;
   height: 650px;
+  background: #000; /* 图片没到位之前，舞台本身就是黑的 */
   transform: translate(-50%, -50%) scale(var(--fit));
   transform-origin: center center;
   /* 移动端手感：
@@ -218,18 +220,111 @@ body {
   width: 200px;
   height: 220px;
 }
-.head img {
+.head.is-active .plate {
+  filter: drop-shadow(0 0 14px rgba(255, 208, 75, 0.9));
+}
+
+/* ---------------- 名牌（HUD 头像框 / 揭晓动画共用） ----------------
+   200×220 的盾形底板就是 head_{red,blue}.webp；金环内洞是透明圆（半径 30.5，圆心 (100,45)），
+   正好放一枚 62px 的圆盘头像。头像是**运行时**从 chess.webp 里裁的：
+   background-size / background-position 由 game/plate.ts 算好注入，运行时不占新资源。 */
+.plate {
+  position: relative;
+  width: 200px;
+  height: 220px;
+  --disc: #7a1c17; /* 红方暗红 */
+}
+.plate[data-side="blue"] {
+  --disc: #123a5e; /* 蓝方藏青 */
+}
+.plate-art {
+  position: absolute;
+  inset: 0;
   width: 200px;
   height: 220px;
   display: block;
 }
-.head.is-active img {
-  filter: drop-shadow(0 0 14px rgba(255, 208, 75, 0.9));
+.plate-disc {
+  position: absolute;
+  left: var(--disc-left);
+  top: var(--disc-top);
+  width: var(--disc-size);
+  height: var(--disc-size);
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: var(--disc);
+  background-repeat: no-repeat;
 }
-#head-red {
+/* 五角星挂在圆盘外圈：位置由 game/plate.ts 的 starLayout 算，星少自动排紧 */
+.plate-star {
+  position: absolute;
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
+}
+.plate-star svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* 黄块（底板自带的 90×25 金条）里的身份字 */
+.plate-id {
+  position: absolute;
+  left: 55px;
+  top: 94px;
+  width: 90px;
+  height: 25px;
+  text-align: center;
+  font: 700 15px/25px var(--font);
+  color: #7a3a06;
+}
+/* 称号（等级名 / 电脑写“普通”）与积分，两行压在盾体上 */
+.plate-title {
+  position: absolute;
+  left: 26px;
+  top: 130px;
+  width: 148px;
+  text-align: center;
+  font: 700 14px/16px var(--font);
+  letter-spacing: 1px;
+  color: #ffd24a;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.plate-points {
+  position: absolute;
+  left: 26px;
+  top: 152px;
+  width: 148px;
+  text-align: center;
+  font: 400 13px/16px var(--font);
+  color: #f3e3c3;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+/* 开局揭晓期间：背景上不许出现红蓝（头像 + 剩余子面板都先藏起来） */
+.head[data-hidden],
+.panel[data-hidden] {
+  visibility: hidden;
+}
+/* 名牌落位的同时，其余部分一起淡回来（头像 / 剩余子面板） */
+.head.is-incoming,
+.panel.is-incoming {
+  animation: head-in 420ms ease-out both;
+}
+@keyframes head-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* 位置按"我方在左"排：谁在左边由 Hud 的 data-pos 决定（执蓝时红蓝互换），
+   红蓝只是颜色，不再是方位。 */
+.head[data-pos="left"] {
   left: 20px;
 }
-#head-blue {
+.head[data-pos="right"] {
   left: 780px;
 }
 
@@ -259,10 +354,10 @@ body {
   flex-direction: column;
   gap: 11px;
 }
-#panel-red {
+.panel[data-pos="left"] {
   left: 45px;
 }
-#panel-blue {
+.panel[data-pos="right"] {
   left: 803px;
 }
 .prow {
@@ -339,50 +434,28 @@ body {
   filter: grayscale(0.85) brightness(0.8);
   cursor: not-allowed;
 }
-.imgbtn.b-mode {
-  width: 145px;
-  height: 52px;
-  top: 500px;
-  background-image: url("/assets/button_mode.webp");
-  background-size: 200% 200%;
+.imgbtn.b-clean:disabled {
+  color: rgba(120, 150, 180, 0.85);
+  text-shadow: none;
 }
-.imgbtn.b-mode[data-col="0"] {
+/* 按钮位置。底图与文字样式统一在 .imgbtn.b-clean（见下方"金盘按钮"一节）：
+   全站只有一个按钮底 —— button_clean.png（120x43），文字用真文本。
+   坐标 = 把原来 145x52 的框按中心对齐缩到 120x43（300+12.5=312、555+12.5=567）。 */
+.imgbtn.b-start-a {
   left: 300px;
-  background-position: 0% 0%;
+  top: 500px;
 }
-.imgbtn.b-mode[data-col="0"]:hover {
-  background-position: 0% 100%;
-}
-.imgbtn.b-mode[data-col="1"] {
+.imgbtn.b-start-b {
   left: 555px;
-  background-position: 100% 0%;
-}
-.imgbtn.b-mode[data-col="1"]:hover {
-  background-position: 100% 100%;
+  top: 500px;
 }
 .imgbtn.b-giveup {
-  left: 427px;
-  top: 580px;
-  width: 145px;
-  height: 52px;
-  background-image: url("/assets/button_giveup.webp");
-  background-size: 200% 200%;
-  background-position: 100% 0%;
-}
-.imgbtn.b-giveup:hover:not(:disabled) {
-  background-position: 100% 100%;
+  left: 440px;
+  top: 584px;
 }
 .imgbtn.b-ok {
   left: 440px;
   top: 300px;
-  width: 120px;
-  height: 43px;
-  background-image: url("/assets/button_ok.webp");
-  background-size: 100% 200%;
-  background-position: 0% 0%;
-}
-.imgbtn.b-ok:hover {
-  background-position: 0% 100%;
 }
 
 .hint {
@@ -431,15 +504,18 @@ body {
    但四列下半部分的面板区域像素完全一致（实测差异 0.00%，只有那行红字不同），
    于是拆成「4 张顶栏 320x122 + 1 张共用面板 320x173」，脚本见 scripts/split-wait.py。
    122 这条切线是量出来的，不是猜的 —— 见脚本头部的逐行差异表。 */
-#modal .panel {
+/* 结算面板 = 一张共用底板（320x173）放在底部，上面压一张结果顶栏（320x122）。
+   注意它**不是** .panel（那是 HUD 的"剩余子数"板子，带蓝边/渐变/圆角）——
+   类名一旦复用，结算图底下就会多出一圈蓝框。 */
+#modal .result-panel {
+  position: absolute;
   left: 340px;
   top: 78px;
   width: 320px;
   height: 295px;
-  background-image: url("/assets/wait_panel.webp");
-  background-repeat: no-repeat;
-  background-position: left bottom;
-  background-size: 320px 173px;
+  background: url("/assets/wait_panel.webp") left bottom / 320px 173px no-repeat;
+  border: 0;
+  border-radius: 0;
 }
 #modal .panel-top {
   position: absolute;
@@ -448,30 +524,6 @@ body {
   width: 320px;
   height: 122px;
   display: block;
-}
-
-/* 对局记录：终局弹窗上的一行小按钮（标记坏棋 / 导出给 AI 复盘） */
-#modal .logrow {
-  position: absolute;
-  left: 240px;
-  top: 440px;
-  width: 520px;
-  z-index: 1;
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-#modal .logrow button {
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 208, 75, 0.45);
-  border-radius: 14px;
-  color: #ffe9a8;
-  font: 600 12px/1 var(--font);
-  padding: 6px 10px;
-  cursor: pointer;
-}
-#modal .logrow button:hover {
-  background: rgba(0, 0, 0, 0.65);
 }
 
 #toast {
@@ -487,6 +539,383 @@ body {
   color: #fff;
   font: 600 14px/1 var(--font);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------------- 联机大厅（①中间页 / ②房主邀请 / ③客人加入） --------------
+   三屏共用一块 1000x650 画布，几何坐标直接照搬 Pen 设计稿：
+     面板  (340,236) 320x173 = wait_panel_clean.webp（PS 去掉人像的版本，凹口保留）
+     标题  y=262（三屏统一，切屏时不许跳）
+     按钮  120x43 两枚并排 x=368 / 512，y=424；单枚居中 x=440
+   button_clean.png 是 120x86 的**上下两态**图：上=常态（金底蓝字）、下=hover（红底白字），
+   靠 background-size 100% 200% + background-position 切行。 */
+#lobby {
+  position: absolute;
+  inset: 0;
+  /* 背景压暗 45%：三屏在设计稿里都有这一层「压暗」矩形，作用是让奶油色面板跳出来。
+     用它压在背景上（而不是盖在面板上），面板自己保持亮 —— 顺序反了整块会发灰。 */
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45)),
+    #0d1117 url("/assets/bg.jpg") center/cover no-repeat;
+}
+
+.lobby-panel {
+  position: absolute;
+  left: 340px;
+  top: 236px;
+  width: 320px;
+  height: 173px;
+  background: url("/assets/wait_panel_clean.webp") center / 100% 100% no-repeat;
+  /* 纯装饰层：别让它挡住下面的输入框（面板是后画的同级元素，会盖在文字上） */
+  pointer-events: none;
+}
+
+.lobby-title {
+  position: absolute;
+  left: 340px;
+  top: 262px;
+  width: 320px;
+  margin: 0;
+  text-align: center;
+  font: 700 18px/1 var(--font);
+  color: #8e2f22;
+  letter-spacing: 0.5px;
+}
+
+.lobby-sub {
+  position: absolute;
+  left: 348px;
+  top: 288px;
+  width: 304px;
+  margin: 0;
+  text-align: center;
+  font: 400 10.5px/1.4 var(--font);
+  color: #7a6350;
+}
+
+/* ① 只有两行内容，副标题比 ②③ 低 23px（设计稿里是重新分布过的，不是随手写的） */
+.lobby-root[data-step="menu"] .lobby-title {
+  font-size: 18px;
+}
+.lobby-root[data-step="menu"] .lobby-sub {
+  top: 311px;
+}
+/* ① 的返回压在最亮的那片草地上，用暗一点的字（②③ 用亮字） */
+.lobby-root[data-step="menu"] .lobby-back {
+  color: #b39a7e;
+}
+
+/* ② 的只读链接框：整条可选中（复制 API 被拒时的兜底就是让用户手动 ⌘C） */
+.lobby-link {
+  position: absolute;
+  left: 378px;
+  top: 310px;
+  width: 244px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1.5px solid #e5c46b;
+  border-radius: 5px;
+  background: #fff6dc;
+  color: #6b5540;
+  font: 400 9px/21px ui-monospace, Menlo, monospace;
+  outline: none;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+/* ③ 的输入框：「粘贴」贴在框右端内侧（原版就是这个位置，不是另一个按钮） */
+.lobby-field {
+  position: absolute;
+  left: 378px;
+  top: 300px;
+  width: 244px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 8px;
+  border: 1.5px solid #e5c46b;
+  border-radius: 5px;
+  background: #fffdf5;
+}
+.lobby-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font: 400 11px/1 var(--font);
+  color: #3a2e22;
+  letter-spacing: 1px;
+}
+.lobby-field input::placeholder {
+  color: #c8b79c;
+  letter-spacing: 1px;
+}
+.lobby-paste {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: 500 9px/1 var(--font);
+  color: #1787f0;
+}
+#lobby .lobby-paste:hover {
+  color: #0b5c9c;
+}
+
+.lobby-label {
+  position: absolute;
+  left: 378px;
+  top: 288px;
+  font: 400 9px/1 var(--font);
+  color: #b39a7e;
+}
+
+/* 错误行常驻占位（空串也占着），否则一出错下面整块会跳一下 */
+.lobby-error {
+  position: absolute;
+  left: 378px;
+  top: 332px;
+  width: 244px;
+  margin: 0;
+  font: 400 9px/1.2 var(--font);
+  color: #c0392b;
+}
+
+.lobby-hint {
+  position: absolute;
+  left: 378px;
+  top: 340px;
+  width: 244px;
+  margin: 0;
+  text-align: center;
+  font: 400 9px/1.2 var(--font);
+  color: #8a6a2f;
+}
+
+/* ---------------- 金盘按钮（全站唯一按钮底） ----------------
+   button_clean.png 是 120x86 的**上下两态**图：上=常态（金底蓝字）、下=hover（红底白字）。
+   文字走真文本（可无障碍朗读、可 i18n），不用把字烤进图里 —— 开始界面、认输、结算确定、
+   联机大厅全用它，仓库里不再保留 button_mode / button_giveup / button_ok 那三张烤死的按钮图。
+
+   对齐的两个魔法数来自量图（不是随手填的）：
+     金色书写区中心比 43px 按钮框低 1.5px、且比几何中心右偏 4px（左边有宝石）。 */
+.imgbtn.b-clean {
+  width: 120px;
+  height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 0 0 8px;
+  background-image: url("/assets/button_clean.png");
+  background-size: 100% 200%;
+  background-position: 0% 0%;
+  font: 300 19px/1 var(--font);
+  color: #1e8cfa;
+  letter-spacing: -0.3px;
+  text-shadow: 0 1px 0 rgba(10, 78, 146, 0.4);
+}
+/* 开始界面那两枚是**四字**文案，而且是压在蓝色天空上的：
+   ① 尺寸回到原素材的 145x52（button_clean 等比放大 1.209 倍，120x43 → 145x52 是同一个比例，
+      background-size:100% 200% 自动跟上），四个字才放得下 —— 原图里字高 23/52，几乎铺满金色区；
+   ② 重量 400：300 的细字在亮天空上会被吃掉。
+   棋盘 / 面板上的两字按钮背景是深色或奶油色，继续用 300。 */
+.imgbtn.b-clean.is-long {
+  width: 145px;
+  height: 52px;
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 0;
+  padding: 4px 0 0 10px;
+}
+.imgbtn.b-clean.is-long:hover {
+  padding: 0 0 2px 10px;
+}
+
+.imgbtn.b-clean:hover {
+  background-position: 0% 100%;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(122, 42, 15, 0.65);
+  /* 红盘的实心区比金盘**高约 2.5px**（量出来的：金 434..460，红 427..462），
+     两态共用一个 padding 时文字在悬停时会明显偏下 —— 悬停这态把上边补偿去掉，
+     等于整体上移 1.5px。19px 字下实测文字中心 443.5 → 去掉下补偿后 444.5，
+     正好落在红盘实心区中心。别改成 padding-top：那是常态那一态的对齐量。 */
+  padding: 0 0 0 8px;
+}
+
+.b-create,
+.b-copy {
+  left: 368px;
+  top: 424px;
+}
+.b-join,
+.b-cancel {
+  left: 512px;
+  top: 424px;
+}
+.b-go {
+  left: 440px;
+  top: 424px;
+}
+
+/* 面板外的返回：草地上的浅字，加投影才读得出来 */
+.lobby-back {
+  position: absolute;
+  left: 340px;
+  top: 478px;
+  width: 320px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: 500 10px/1 var(--font);
+  color: #fff3d6;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+#lobby .lobby-back:hover {
+  color: var(--gold);
+}
+
+/* ---------------- 开局揭晓颜色 ----------------
+   一枚双面名牌绕竖轴翻转、减速停在我方那一面，然后整层淡出。
+   素材复用 head_red / head_blue（正面红、背面蓝），停在哪面由 --turns 决定：
+   1440°（4 圈）红面朝前；1620°（4 圈半）蓝面朝前。
+   时长先按 1.5s 转 + 0.3s 淡出给一版，节奏好不好等看过再说。 */
+#reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  /* 透视放在容器上（transform 元素的父级）：没有它 rotateY 是正交投影，
+     牌子翻起来像被压扁的纸片，没有"转"的感觉 */
+  perspective: 900px;
+  /* 压暗要够狠：名牌直接用 head_* 的盾形，底色亮的话它跟棋盘糊在一起、金边也不跳 */
+}
+/* 压暗层自己淡出；卡片留在原位不淡，等 App 卸载这一层时真头像顶上来 —— 严丝合缝 */
+#reveal .reveal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 44%, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.82) 74%);
+  animation: reveal-out var(--fly) ease-in calc(var(--spin) + var(--hold)) forwards;
+}
+#reveal .reveal-card {
+  position: relative;
+  width: 200px;
+  height: 220px;
+  transform-style: preserve-3d;
+  /* 两段：0~1.52s 转；1.52~1.99s 飞向左侧头像位（head 就在 left:20 / top:50，同尺寸 200x220）。
+     translate 必须写在 rotateY **前面** —— 写后面的话，蓝方的 180° 会把 X 方向翻反，名牌往右飞。 */
+  animation:
+    reveal-spin var(--spin) cubic-bezier(0.1, 0.72, 0.12, 1) forwards,
+    reveal-fly var(--fly) cubic-bezier(0.36, 0, 0.24, 1) calc(var(--spin) + var(--hold)) forwards;
+}
+#reveal .reveal-face {
+  position: absolute;
+  inset: 0;
+  width: 200px;
+  height: 220px;
+  display: block;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.55));
+  /* 落位末端把投影收掉：真头像没有这层阴影，不收的话接替瞬间会闪一下 */
+  animation: reveal-shadow var(--fly) ease-in calc(var(--spin) + var(--hold)) forwards;
+}
+@keyframes reveal-shadow {
+  to {
+    filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0));
+  }
+}
+#reveal .reveal-face.back {
+  transform: rotateY(180deg);
+}
+/* 「你执红方」沿用游戏里回合条的样式（黑 42% + 2px 金边），
+   直接铺在草地上太糊，加个牌子才读得出来 */
+/* 牌子脱开 flex 流（绝对定在卡片下方）：卡片要正好在舞台中心，
+   否则飞行距离得跟着文字高度算。 */
+#reveal .reveal-text {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 128px);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 7px 18px;
+  border-radius: 18px;
+  border: 2px solid var(--gold);
+  background: rgba(0, 0, 0, 0.42);
+  font: 700 18px/1 var(--font);
+  letter-spacing: 3px;
+  color: #ffe9a8;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  /* 转完那一刻出字（提前 120ms 起淡入，正好在停住的瞬间立住），
+     然后**停在屏幕上 hold 这么久**再跟牌一起走 */
+  animation:
+    reveal-text 260ms ease-out calc(var(--spin) - 120ms) forwards,
+    reveal-text-out 240ms ease-in calc(var(--spin) + var(--hold)) forwards;
+}
+
+@keyframes reveal-spin {
+  from {
+    transform: translate3d(0, 0, 0) rotateY(0deg);
+  }
+  to {
+    transform: translate3d(0, 0, 0) rotateY(var(--turns));
+  }
+}
+/* 落位：从舞台正中（400,215）飞到左上头像位（20,50）＝ (-380, -165) */
+@keyframes reveal-fly {
+  from {
+    transform: translate3d(0, 0, 0) rotateY(var(--turns));
+  }
+  to {
+    transform: translate3d(-380px, -165px, 0) rotateY(var(--turns));
+  }
+}
+@keyframes reveal-text {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+@keyframes reveal-text-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes reveal-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* 减弱动态效果：不转、不淡出，直接定格在我方那一面 */
+@media (prefers-reduced-motion: reduce) {
+  #reveal .reveal-backdrop,
+  #reveal .reveal-card,
+  #reveal .reveal-face,
+  #reveal .reveal-text {
+    animation: none;
+    opacity: 1;
+  }
+  #reveal .reveal-card {
+    transform: rotateY(var(--turns));
+  }
 }
 
 /* ---------------- 竖屏遮罩：请把手机横过来 ----------------
@@ -513,7 +942,7 @@ body {
   justify-content: center;
   gap: 20px;
   padding: 24px;
-  background: #0d1117;
+  background: #000;
   color: var(--gold);
   text-align: center;
   /* 纯提示层，不拦事件：万一下面那条媒体查询判断偏了（某些触屏笔记本），
@@ -552,9 +981,24 @@ body {
   }
 }
 
-/* 这一条就是全部开关：竖屏 + 触屏 ⇒ 显示遮罩 */
-@media (orientation: portrait) and (pointer: coarse) {
-  #rotate {
+/* 这一条就是全部开关：竖屏 + 触屏 + 页面已经稳定 ⇒ 显示遮罩。
+   "已经稳定" = index.html 的内联脚本在两帧之后给 <html> 打上的 .ready：
+   文档刚解析时 innerWidth/innerHeight 还是 0，媒体查询会短暂命中，
+   于是加载首页会闪一下「白手机图标 + 黑底」（就是那个黑白图案）。
+   代价：JS 完全挂掉时这个提示不会出现 —— 比首屏闪花好。 */
+/* 只在**装成应用**（standalone）时提示：浏览器标签页里哪怕窗口是竖的也不弹。
+   原因：标签页里窗口尺寸随时变，页面刚加载的那一瞬 innerWidth/Height 还是 0，
+   (orientation: portrait) + (pointer: coarse) 会误判 → 首屏闪一下"白手机图标 + 黑底"。
+   PWA 是固定横屏的（manifest 里 orientation: landscape），真竖屏拿起设备时这条仍然生效。 */
+@media (display-mode: standalone) and (orientation: portrait) and (pointer: coarse) {
+  html.ready #rotate {
     display: flex;
+    opacity: 0;
+    animation: rotate-in 200ms ease-out 400ms forwards;
+  }
+}
+@keyframes rotate-in {
+  to {
+    opacity: 1;
   }
 }

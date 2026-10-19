@@ -17,7 +17,7 @@ export interface Transport {
 
 export interface LocalTransport extends Transport {
   kind: 'local';
-  /** 只有 ?debug=1 的真面目面板会用它；正常渲染一律走 client.onmessage 的投影 */
+  /** 完整真相只给测试/本地调试用；界面一律走 client.onmessage 的投影 */
   authority: Authority;
 }
 
@@ -28,18 +28,38 @@ export function createLocalTransport(seed: number, opts: AuthorityOptions = {}):
     kind: 'local',
     authority,
     connect(side: Side | null): Client {
+      // 初始快照是**同步**下发的（见 Authority.subscribe），而 useGame 要到 layout effect
+      // 才挂 onmessage —— 中间这段必须缓冲，否则第一条 state（整块棋盘）直接丢掉。
+      // 缓冲也顺带干掉了"进游戏先闪一下空背景"：赋值那一刻同步 flush，setState 在 paint 之前。
+      let handler: ((msg: ServerMsg) => void) | null = null;
+      const pending: ServerMsg[] = [];
+      let closed = false;
+      const emit = (msg: ServerMsg) => {
+        if (closed) return;
+        if (handler) handler(msg);
+        else pending.push(msg);
+      };
+
       const client: Client = {
         side,
-        onmessage: () => {},
+        get onmessage() {
+          return handler ?? (() => {});
+        },
+        set onmessage(fn: (msg: ServerMsg) => void) {
+          handler = fn;
+          for (const msg of pending.splice(0)) fn(msg);
+        },
         send(msg) {
           const res = authority.dispatch(side, msg);
-          if ('rejected' in res) client.onmessage({ t: 'reject', reason: res.rejected });
+          if ('rejected' in res) emit({ t: 'reject', reason: res.rejected });
         },
         close() {
+          closed = true;
+          pending.length = 0; // 关掉之后别再补发缓冲里的旧快照
           off();
         },
       };
-      const off = authority.subscribe(side, (msg) => client.onmessage(msg));
+      const off = authority.subscribe(side, emit);
       return client;
     },
   };

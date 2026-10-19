@@ -203,3 +203,43 @@ test('切换模式：新建会话不会复用旧会话的 client', async () => {
   await tick();
   expect(stale.length, '旧 client 已经退订，收不到任何东西').toBe(0);
 });
+
+// ── 联机（房主/客人） ────────────────────────────────────
+// 真 peerjs 要 WebRTC，这里只验"会话层的账"：种子覆盖、host 句柄透出、房主/客人的角色。
+
+test('start("online", "red", {seed})：房主会话带 host 句柄，种子按房间号覆盖', async () => {
+  const { result } = renderHook(() => useSession(999));
+  let session!: ReturnType<typeof result.current.start>;
+  act(() => {
+    session = result.current.start('online', 'red', { seed: 4821 });
+  });
+
+  expect(session.mode).toBe('online');
+  expect(session.side).toBe('red');
+  expect(session.seed, '房主建房时种子 = 四位数房号').toBe(4821);
+  expect(result.current.seed).toBe(4821);
+  expect(session.host, '房主才有 host 句柄').toBeTruthy();
+  expect(session.authority, '房主的权威在本页').toBeTruthy();
+  expect(session.host!.invitation).toBeInstanceOf(Promise);
+
+  // 房间起不来（jsdom 里没有 WebRTC）也算正常：invitation 要么 resolve 要么 reject，
+  // 关键是 onGuest 的订阅/退订不能抛
+  const off = session.host!.onGuest(() => {});
+  expect(off).toBeTypeOf('function');
+  off();
+  act(() => result.current.back());
+});
+
+test('start("online", "blue", {hostId, seed})：客人会话没有 host 句柄，种子跟着链接走', () => {
+  const { result } = renderHook(() => useSession(1));
+  let session!: ReturnType<typeof result.current.start>;
+  act(() => {
+    session = result.current.start('online', 'blue', { seed: 4821, hostId: 'battlechess-4821' });
+  });
+
+  expect(session.side).toBe('blue');
+  expect(session.seed).toBe(4821);
+  expect(session.host, '客人不建房').toBeUndefined();
+  expect(session.authority, '真相在房主那边').toBeNull();
+  act(() => result.current.back());
+});

@@ -60,21 +60,25 @@ pnpm exec tsx scripts/gen-data.ts                                 # 自对弈生
 core/authority.ts   持有真相的纯函数状态机；只接受 unknown action（边界显式校验），只下发投影
       │
 transport/          local.ts（单机直连）/ worker.ts + worker/（SharedWorker，双窗口）
+                    peer.ts + online.ts（WebRTC 联机；peerjs 只允许经 online.ts 动态 `import()`）
       │
 core/visibility.ts  viewFor(state, side) —— 隐藏信息只在这一层发生
       │
 game/               会话与交互策略（全部是纯函数或 hook）：useSession / useGame / useAi /
-                    boardInteraction / hudText / geometry / gameLog / useFitScale / useEatenGhosts
+                    boardInteraction / hudText / geometry / lobby / side / useFitScale / useEatenGhosts /
+                    rating（积分与等级）/ plate（名牌几何 + 头像裁切参数）
       │
-components/         纯展示：Board / Piece / Hud / StartScreen / ResultModal / Toast
+components/         纯展示：Board / Piece / Hud / NamePlate / StartScreen / OnlineLobby /
+                    ColorReveal / ResultModal / Toast
 ```
 
 ```
 src/core/       pieces(兵种+克制) rng board rules judge reduce visibility
                 ai(贪心) search(默认老师) searchCore(make/unmake) nn(手写卷积) aiNet features authority
-src/transport/  local.ts 单机； worker.ts + src/worker/authority.worker.ts 双窗口
-src/game/       见上；netLoader.ts 是权重懒加载
-scripts/        arena / check-parity / gen-data / review-log（TS）；fetch-assets / to-webp /
+src/transport/  local.ts 单机； worker.ts + src/worker/authority.worker.ts 双窗口；
+                peer.ts（PeerJS/WebRTC 传输）+ online.ts（动态加载入口、房主/客人装配）
+src/game/       见上；netLoader.ts 是权重懒加载；lobby.ts 是房号解析 / 邀请链接拼接（纯函数）
+scripts/        arena / check-parity / gen-data（TS）；fetch-assets / to-webp /
                 split-wait / make-icon（py/sh）；click-check / pwa-check（CDP）
 ```
 
@@ -126,10 +130,19 @@ URL 参数：`?mode=ai|hotseat|dual`、`?side=red|blue`、`?seed=123`、`?ai=sea
   后者 8 个。改 AI 强度时别只改一处还以为两边都改了。
 - 搜索类优化默认都要**在 `scripts/arena.ts` 上验收**才留；历史上 `ownThreatFull`、`splitQuiescenceBudget`
   都是"看起来更对、实测更弱"，开关与结论留在代码注释里，**别重试**。
-- 对局记录（localStorage，上限 100 盘）只存「种子 + 动作序列」，整盘棋是确定性的，
-  用 `createState(seed)` + 序列即可完整重放（含真相）。存真相反而更占地方。
+- **对局记录 / 导出已整体删除**（2026 年，`gameLog.ts` 连同 99 行测试一起没了）。
+  它是写进 localStorage 却没有任何界面能读的"死存档"（导出按钮砍掉之后就断了）。
+  要复盘 AI 坏棋请用 `scripts/arena.ts` 批量胜率，或者临时把 `{seed, 动作序列}` 打到 console。
 
 ---
+
+### 名牌头像（`game/plate.ts`）踩过的两个坑
+
+1. **脸的判据不能用明度均值。** 最初按 `mean(r,g,b) < 95` 取暗部重心，红方深红袍、蓝方藏青袍的
+   均值都在 60~75，重心被袍子拽走 —— 蓝将军、蓝国王的头像框整体偏上、皇冠被切。
+   现在只认**近黑**（`max(r,g,b) < 50`）：黑脸罩就是那张脸，两色构图才一致（国王红 (67,69) / 蓝 (67,65)）。
+2. **圆盘要盖住金环内洞。** `head_*.webp` 的洞实测是半径 30.5 的正圆（bbox 70..130 / 15..75），
+   圆盘取 62 就是「整块盖住、又不压金环」的那个数；设计稿里的 64×66 会压到环，别照抄。
 
 ## 6. 素材与文档
 
@@ -143,8 +156,8 @@ URL 参数：`?mode=ai|hotseat|dual`、`?side=red|blue`、`?seed=123`、`?ai=sea
 
 | README 段落 | 现状 |
 |---|---|
-| §1 `?debug=1` / §3 架构图里的 `TruthPanel` | 面板与组件已删除（`src/transport/local.ts:20` 注释还留着旧说法） |
-| §7 终局弹窗"⭐ 标记这局" | 已删除；只剩「确定」（回开始界面并换种子）+「导出对局记录」 |
+| §1 `?debug=1` / §3 架构图里的 `TruthPanel` | 面板与组件已删除，README 表格已同步 |
+| §7 终局弹窗"⭐ 标记这局"、「导出对局记录」 | 均已删除；只剩「确定」（回开始界面并换种子） |
 | §9 `scripts/make-icons.py`、素材体积表 | 现为 `scripts/make-icon.py`；体积见 ASSETS.md |
 
 改完功能后顺手把 README 对应段落更新，不要越攒越多。

@@ -4,7 +4,7 @@
 import { MAX_NO_EAT, MIN_GIVEUP, REASON_TEXT } from '../core/judge';
 import type { Side, ViewState } from '../core/types';
 
-export type Mode = 'ai' | 'hotseat' | 'dual';
+export type Mode = 'ai' | 'hotseat' | 'dual' | 'online';
 
 export function sideName(side: Side): string {
   return side === 'red' ? '红方' : '蓝方';
@@ -24,7 +24,7 @@ export function bannerText(view: ViewState, mode: Mode): string {
   if (view.over) return '对局结束';
   const turnName = sideName(view.turn);
   if (mode === 'ai') return view.you === view.turn ? '轮到你了' : '电脑思考中…';
-  if (mode === 'dual') {
+  if (mode === 'dual' || mode === 'online') {
     return view.you === view.turn ? `轮到你（${sideName(view.you)}）· 请落子` : `等待对方（${turnName}）…`;
   }
   return `${turnName}回合 · 请翻棋或走子`;

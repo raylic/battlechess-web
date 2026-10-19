@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 import { chooseAction } from '../core/ai';
 import { chooseActionNet } from '../core/aiNet';
@@ -9,7 +9,6 @@ import type { Client } from '../transport/local';
 import type { Action, ServerMsg, Side, ViewState } from '../core/types';
 import { currentNet, loadNet } from './netLoader';
 
-export const AI_SIDE: Side = 'blue';
 export const AI_THINK_MS = 420;
 
 /**
@@ -104,26 +103,21 @@ export function useAiMove(
   client: Client | null,
   view: ViewState | null,
   seed: number,
+  /** AI 执哪一方：人机模式下是"我方颜色的反面"（颜色本身由种子派生） */
+  aiSide: Side,
   kind: AiKind = 'greedy',
   net: TinyNet | null = null,
-  /** AI 落子后回调（对局记录用它把 AI 的动作也记上） */
-  onAction?: (action: Action) => void,
 ): void {
-  // 用 ref 存回调：否则 onAction 换个新引用就会把思考中的定时器重挂一遍
-  const report = useRef(onAction);
-  report.current = onAction;
-
   useEffect(() => {
-    if (!client || !view || view.over || view.turn !== AI_SIDE) return;
+    if (!client || !view || view.over || view.turn !== aiSide) return;
     const step = view.step;
     const timer = setTimeout(() => {
       const rand = mulberry32((seed ^ Math.imul(step + 1, 2654435761)) >>> 0);
       const action = think(kind, view, rand, net);
       if (action) {
-        report.current?.(action);
         client.send(action);
       }
     }, AI_THINK_MS);
     return () => clearTimeout(timer);
-  }, [client, view, seed, kind, net]);
+  }, [client, view, seed, aiSide, kind, net]);
 }

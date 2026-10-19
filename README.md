@@ -26,8 +26,9 @@ pnpm assets         # 从原仓库重新拉取美术素材（只拷用到的那 
 | `?mode=ai` | 直接开人机对局 |
 | `?mode=hotseat` | 直接开单机热座（一个人控制两方） |
 | `?mode=dual&side=blue&seed=123` | 双窗口：以蓝方视角加入 123 号棋局 |
+| `?mode=online&seed=123` | 联机：开房（本页当红方，房间号 = `battlechess-123`） |
+| `?mode=online&host=<房号>&side=blue&seed=123` | 联机：连进别人的房间（`side` 不给就是蓝方） |
 | `?seed=123` | 指定棋盘种子（同种子 = 同一盘棋） |
-| `?debug=1` | 右下角显示"真面目"面板（只有单机模式拿得到真相） |
 | `?ai=` | 电脑档位：`search`（默认，PIMC 搜索=老师）/ `greedy`（一步贪心，最弱）/ `net`（神经网络，暂不可用）。旧名 `pimc` 是 `search` 的别名 |
 
 ---
@@ -37,9 +38,10 @@ pnpm assets         # 从原仓库重新拉取美术素材（只拷用到的那 
 | 开始界面按钮 | 实际模式 | 说明 |
 |---|---|---|
 | 本地对战 | **单人 vs 电脑** | 你执红先手；AI 只看得到蓝方视角，和你受同样的信息限制 |
-| 联网对战 | **双人 · 两个视角** | 点一下自动再开一个窗口：本窗口红方、新窗口蓝方，各看各的视角，只能在自己的回合操作 |
+| 联网对战 | **联机大厅**（①中间页 / ②房主邀请 / ③客人加入） | 房号 = 房间种子（四位）；链接给对面点开即进，传输走 peerjs（见 §7） |
 
-> 双窗口基于 `SharedWorker`（Chrome / Firefox / Safari 16.4+）。若浏览器拦截弹窗，手动打开开始界面显示的 URL：`?mode=dual&side=blue&seed=<种子>`。
+> 双窗口（`dual`）的按钮位让给了联机大厅（第二枚按钮就是「联网对战」）。
+> 双窗口本身没删，仍然可以走 URL 进：`?mode=dual&side=blue&seed=<种子>`；它基于 `SharedWorker`（Chrome / Firefox / Safari 16.4+），被拦弹窗时也可用这条 URL。
 
 ### 规则
 
@@ -49,6 +51,26 @@ pnpm assets         # 从原仓库重新拉取美术素材（只拷用到的那 
 - 吃子：目标必须已翻开且是敌方；`自己等级 <= 对方等级` 即可吃。**刺客能吃国王，国王吃不了刺客。**
 - 结束：一方被吃光 / 双方各剩 1 子比大小 / 连续 30 步无吃子无翻棋判和 / 认输（需走过 20 步）。
 
+### 积分与等级
+
+积分只存在**本地**（`localStorage` 的 `battlechess.rating.v1`），一人一本账，没有服务器校验。
+
+| 等级 | 分数 | 星级 |
+|---|---|---|
+| 刺客 | 0 | ★ |
+| 禁卫军 | 100 | ★★ |
+| 弓箭手 | 250 | ★★★ |
+| 骑士 | 450 | ★★★★ |
+| 将军 | 700 | ★★★★★ |
+| 国王 | 1000 | ★★★★★★ |
+
+- 胜 **+20**、负 **−20**（认输也算负）、和 **0**；分数不会低于 0。
+- **等级是当前分数的实时映射**：掉分就掉级，等级和积分永远是同一本账。
+- 人机与联机都记（联机时双方各记自己的）；**热座与双窗口不记** —— 同一台机器两个人，记谁的都不对，
+  这两种模式的名牌上也就只有身份，没有星级与积分。
+- 名牌：金环里是圆盘头像、外圈挂星级、黄块写身份、下面两行是称号与积分。
+  电脑那侧写「普通」、不显示积分。
+
 ---
 
 ## 3. 架构
@@ -57,7 +79,7 @@ pnpm assets         # 从原仓库重新拉取美术素材（只拷用到的那 
 authority（持有真相的纯函数状态机，core/authority.ts）
    │  只接受 action（类型是 unknown，边界处显式校验），只发出 state(已按视角投影) + reject
    ▼
-transport（local 直连 / SharedWorker；将来换 WebSocket 不改规则与视图）
+transport（local 直连 / SharedWorker / WebRTC；换实现不改规则与视图）
    ▼
 view:red / view:blue（各自只有 viewFor(side) 的投影）
    ▼
@@ -77,7 +99,7 @@ src/
 │   ├── ai.ts            简易 AI（只用 ViewState，绝不偷看真相）
 │   ├── authority.ts     权威：持有真相、校验回合、下发投影
 │   └── test-helpers.ts  紧凑摆棋记号（'r0' / 'b3*' / '.'），仅测试用
-├── transport/           local.ts（单机）/ worker.ts（SharedWorker）
+├── transport/           local.ts（单机）/ worker.ts（SharedWorker）/ peer.ts + online.ts（联机）
 ├── worker/              authority.worker.ts
 ├── game/
 │   ├── useSession.ts    会话生命周期：建会话 / 回开始界面 / 再来一局
@@ -90,7 +112,7 @@ src/
 │   ├── boardInteraction.ts 点击策略 + 高亮（纯函数）
 │   ├── panel.ts         侧栏棋子面板：每方 5 行、存活/没翻起/被吃（纯函数）
 │   └── hudText.ts       HUD 文案 + 结算面板映射（纯函数）
-└── components/          Board / Piece / Hud / StartScreen / ResultModal / Toast / TruthPanel
+└── components/          Board / Piece / Hud / StartScreen / OnlineLobby / ConnectingScreen / ColorReveal / ResultModal / Toast
 ```
 
 ### 不变量
@@ -390,19 +412,28 @@ pnpm exec tsx scripts/arena.ts --a search --b search --games 60 \
 名义深度）：**60 局 14胜12负34和 = 51.7% vs 48.3%，没有收益，而且节点更多**，所以默认关闭。
 开关和这个结论都留在代码注释里，免得以后重试。
 
-### 对局记录（复盘坏棋用）
+### 联机（`?mode=online`）
 
-终局弹窗上有两个按钮：**⭐ 标记这局有问题** 和 **导出对局记录**。记录存在 localStorage
-（`gameLog.ts`，上限 100 盘），每盘只存 **「种子 + 动作序列」**：整盘棋是确定性的，
-`createState(seed)` 加上动作序列就能完整重放（包括每一步的真相），存真相反而更占地方。
-导出的 JSON 拿给 AI 就能定位"第几步的哪一手是坏棋"。
+传输层用 PeerJS（WebRTC DataChannel），权威仍然只有一份 —— 跑在房主标签页里，
+对方只拿到 `viewFor(side)` 的投影。三件事值得知道：
+
+- **peerjs 只经 `online.ts` 的 `import()` 动态加载**：它是独立 chunk（约 90 kB / 24 kB gzip），
+  单机 / 热座 / 双窗口的玩家不下载。别从别处 `import './peer'`，会把 24 kB 拽进主包。
+- **界面与传输还没接上**：三屏大厅（`components/OnlineLobby.tsx` + `styles.css` 的 `#lobby` 段）
+  已经是最终形态，但数据是假的 —— 房号本地随机、邀请链接本地拼、点「加入」一律报房间不存在。
+  接线只改 `App.tsx` 里的 `createRoom` / `joinRoom` 两个 handler，UI 与测试不用动。
+  在此之前，真实联机仍然只能靠地址栏：`?mode=online&host=battlechess-123&side=blue&seed=123`
+  （房间号由种子派生，邀请链接会打到 console）。
+- **信令是 PeerJS 公共云**（含它自带的 TURN），没有自建服务；对称 NAT 之外的网络
+  连不上时不会自动降级到别的传输。
 
 ---
 
 ## 8. 已知限制
 
-- **纯前端防不住作弊**：真相 state 就在浏览器内存里，devtools 可见。双窗口模式把门槛抬高一档（真相在 SharedWorker 里），但不是安全边界。
+- **纯前端防不住作弊**：真相 state 就在浏览器内存里，devtools 可见。双窗口模式把门槛抬高一档（真相在 SharedWorker 里），但不是安全边界。**联机模式反而更宽松**：真相就在房主标签页里（而且种子公开，谁都能把整盘算出来）—— 这游戏的"双盲"从来是礼貌性的，不是密码学保证。
 - 双窗口要求同浏览器同源且支持 `SharedWorker`；不支持时自动退回单机热座。
+- 联机模式要求双方都能访问 PeerJS 公共云；断线不会自动重连（刷新会重新 join，但房主一关房间就没了）。
 - 不做计时/超时判负，对局可以无限思考。
 - 网络档的权重（`public/models/net-v1.bin`，约 374 KB）是**懒加载**的：拿不到（离线首访、文件缺失）会退回搜索档，不会卡住棋盘。
 - 像素级效果（透视角度、棋子重叠/裁切、字重）只能靠眼睛确认。`pnpm click:check` 能把"点击能不能落到棋子上"自动化，但"画面对不对"得看图 —— 本次两个真实 bug（覆盖层吃掉棋盘点击、`--piece-z` 太小导致棋子下半身被格子盖住）都是靠它 + Chrome 截图发现的。
@@ -415,6 +446,10 @@ pnpm exec tsx scripts/arena.ts --a search --b search --games 60 \
 - 美术素材（`public/assets/*`）来自原作仓库，由原作者加工，其中棋子/头像含 **QQ 宠物 IP**，版权归原作者与相关权利人。本仓库公开**仅为了托管 GitHub Pages 试玩**，不是为了推广或分发这些素材，也**不得商用**；若权利人提出要求，会立即移除。
 - 重新拉取素材：`pnpm assets`。脚本只拷本作**真正用到的那 12 张** —— 原仓库里登录 / 匹配 / 取消等界面的图本作没有实现，不拷，所以 `public/assets` 一直是“每个文件都被引用”。
   ⚠️ 这个脚本是把上游原图**直接覆盖进 `public/assets/`**。但 `public/assets/` 现在装的是流水线产出的版本（去掉了边缘杂色的 1x、`begin.png` 抹掉了原作的纪念文字、`wait.png` 裁成了单行），跑一次 `pnpm assets` 会把它们全部冲回原样。要用请先确认。
+- **头像不额外存图**：名牌里那枚圆形头像（6 等级 × 2 色）是运行时从 `public/assets/chess.webp` 裁的 ——
+  精灵图参数（每格 145、每枚棋子的紧裁框、脸的坐标、缩放 0.864）全写在 `src/game/plate.ts`，
+  用 `background-size` / `background-position` 取那一块。改构图就改那几个常数，不用重出图。
+- 五角星同样是 SVG 内联画的（金色面 + 深棕描边），没有额外素材。
 - PWA 图标（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` / `apple-touch-icon.png` / `icon.ico`）不是上游素材，是 `scripts/make-icons.py` 从 4x 的 `begin.png` 裁出来的，裁剪框与原来的 `icon.ico` **完全相同**。重新生成：`python3 scripts/make-icons.py`（需要 Pillow，不参与构建也不参与测试）。
 
 ---

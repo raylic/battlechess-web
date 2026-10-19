@@ -8,8 +8,9 @@ import type { Authority } from '../core/authority';
 import type { Side } from '../core/types';
 import type { Client } from '../transport/local';
 import { createLocalTransport } from '../transport/local';
+import { createOnlineClient, createOnlineHost } from '../transport/online';
 import { createWorkerClient, workerSupported } from '../transport/worker';
-import { AI_SIDE } from './useAi';
+import { otherSide, sideForSeed } from './side';
 import type { Mode } from './hudText';
 
 export interface Session {
@@ -19,8 +20,16 @@ export interface Session {
   client: Client;
   /** 只有人机模式有 */
   aiClient: Client | null;
-  /** 只有单机模式拿得到真相（双窗口模式的真相在 SharedWorker 里） */
+  /** 只有单机模式拿得到真相（双窗口模式的真相在 SharedWorker 里，联机模式在房主页里） */
   authority: Authority | null;
+  /** 会话销毁时额外交代的事（联机模式要拆 WebRTC 监听） */
+  dispose?: () => void;
+  /** 联机**房主**专有：邀请链接 + "客人来了" 通知（客人这边没有这个字段） */
+  host?: {
+    invitation: Promise<string>;
+    /** 订阅客人加入；返回退订函数 */
+    onGuest: (cb: (side: Side) => void) => () => void;
+  };
 }
 
 export interface SessionOptions {
@@ -28,6 +37,8 @@ export interface SessionOptions {
   openWindow?: (url: string, name: string, features: string) => void;
   /** 双窗口的 client 工厂（jsdom 里没有 SharedWorker，测试可注入假的） */
   createWorker?: (seed: number, side: Side) => Client;
+  /** 联机模式：有值就是客人（连这个 hostId）；没有就是房主 */
+  hostId?: string;
 }
 
 export function createSession(
@@ -51,22 +62,71 @@ export function createSession(
     return { mode, side: mySide, seed, client: makeWorker(seed, mySide), aiClient: null, authority: null };
   }
 
+  if (mode === 'online') {
+    if (opts.hostId) {
+      // 客人：连上之前先排队，界面不用等（createOnlineClient 是同步返回的）。
+      // 没带 side 就按房主的派生规则取反面（房主 = sideForSeed(seed)）
+      const mySide: Side = side ?? otherSide(sideForSeed(seed));
+      return {
+        mode,
+        side: mySide,
+        seed,
+        client: createOnlineClient(opts.hostId, seed, mySide),
+        aiClient: null,
+        authority: null,
+      };
+    }
+    // 房主：权威就在本页，自己这一方走本地直连（零延迟），对方走 WebRTC。
+    // 颜色和单机一样由种子派生（联机也随机），邀请链接里带上客人的那一侧
+    const mySide: Side = side ?? sideForSeed(seed);
+    const guests = new Set<(side: Side) => void>();
+    const online = createOnlineHost(seed, mySide, {
+      onGuest: (guestSide) => {
+        for (const cb of [...guests]) cb(guestSide);
+      },
+    });
+    return {
+      mode,
+      side: mySide,
+      seed,
+      client: online.client,
+      aiClient: null,
+      authority: online.authority,
+      dispose: online.destroy,
+      host: {
+        invitation: online.invitation,
+        onGuest: (cb) => {
+          guests.add(cb);
+          return () => guests.delete(cb);
+        },
+      },
+    };
+  }
+
   const transport = createLocalTransport(seed);
-  const mySide: Side | null = mode === 'ai' ? 'red' : null; // 热座用 null：可以替任意一方操作
+  // 人机：颜色由种子派生（偶数红、奇数蓝）；热座用 null，可以替任意一方操作
+  const mySide: Side | null = mode === 'ai' ? (side ?? sideForSeed(seed)) : null;
   return {
     mode,
     side: mySide,
     seed,
     client: transport.connect(mySide),
-    aiClient: mode === 'ai' ? transport.connect(AI_SIDE) : null,
+    aiClient: mode === 'ai' ? transport.connect(otherSide(mySide!)) : null,
     authority: transport.authority,
   };
+}
+
+export interface StartOptions {
+  /** 覆盖种子（房主建房 = 四位数房号；客人 = 链接里带的那个） */
+  seed?: number;
+  /** 客人连谁；房主不要传 */
+  hostId?: string;
 }
 
 export interface SessionApi {
   session: Session | null;
   seed: number;
-  start: (mode: Mode, side?: Side | null) => Session;
+  start: (mode: Mode, side?: Side | null, over?: StartOptions) => Session;
   back: () => void;
   restart: () => void;
 }
@@ -111,11 +171,23 @@ export function useSession(initialSeed: number, opts: SessionOptions = {}): Sess
   function close(s: Session | null): void {
     s?.client.close();
     s?.aiClient?.close();
+    s?.dispose?.();
   }
 
-  function start(mode: Mode, side: Side | null = null): Session {
+  function start(mode: Mode, side: Side | null = null, over: StartOptions = {}): Session {
     close(current.current);
-    const next = createSession(mode, side, seedRef.current, opts);
+    // 联机要按"房间里约定的种子"开：房主用四位数房号，客人用链接里带的那个。
+    // 不写回 seedRef 的话，"再来一局"会从旧种子 +1，把房间种子顶掉。
+    if (over.seed !== undefined) {
+      seedRef.current = over.seed;
+      setSeed(over.seed);
+      syncSeedInUrl(over.seed);
+    }
+    const next = createSession(mode, side, seedRef.current, {
+      ...opts,
+      // 客人必须覆盖 hostId：大厅里手输房号时，opts.hostId（来自地址栏）还是空的
+      ...(over.hostId === undefined ? {} : { hostId: over.hostId }),
+    });
     setSession(next);
     return next;
   }

@@ -72,7 +72,7 @@ test('Authority.dispatch：畸形消息被拒且不崩，也不广播', () => {
     const res = authority.dispatch('red', bad);
     expect(res).toHaveProperty('rejected');
   }
-  expect(seen.length).toBe(0); // 初始 state 是异步下发的，同步阶段不该有广播
+  expect(seen.length, '只该有 subscribe 同步下发的那一条初始快照，畸形消息不广播').toBe(1);
 });
 
 test('Authority.dispatch：把垃圾消息原样丢给 applyAction 也不会污染状态', () => {

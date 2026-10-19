@@ -31,9 +31,6 @@ ASSETS = ROOT / "public" / "assets"
 WANTED = [
     "chess.png",
     "unopen.png",
-    "button_mode.png",
-    "button_giveup.png",
-    "button_ok.png",
     "head_red.png",
     "head_blue.png",
 ]

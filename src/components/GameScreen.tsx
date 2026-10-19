@@ -14,8 +14,10 @@ export interface GameScreenProps {
   onResign: () => void;
   onOk: () => void;
   onToastDone: () => void;
-  onExport?: () => void;
-  recordCount?: number;
+  /** 我的积分（null = 这一局不记分） */
+  points?: number | null;
+  /** 开局揭晓阶段（null = 没在播） */
+  reveal?: { side: Side; landed: boolean } | null;
 }
 
 export function GameScreen({
@@ -27,8 +29,8 @@ export function GameScreen({
   onResign,
   onOk,
   onToastDone,
-  onExport,
-  recordCount,
+  points = null,
+  reveal = null,
 }: GameScreenProps) {
   return (
     <div id="game">
@@ -37,8 +39,8 @@ export function GameScreen({
       {view ? (
         <>
           <Board view={view} onAction={onAction} />
-          <Hud view={view} mode={mode} side={side} onResign={onResign} />
-          <ResultModal view={view} onOk={onOk} onExport={onExport} recordCount={recordCount} />
+          <Hud view={view} mode={mode} side={side} onResign={onResign} points={points} reveal={reveal} />
+          <ResultModal view={view} onOk={onOk} />
         </>
       ) : null}
       <Toast message={toast} onDone={onToastDone} />

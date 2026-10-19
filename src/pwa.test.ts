@@ -104,7 +104,10 @@ test('apple-touch-icon 指向存在的 PNG（iOS 不认 .ico）', () => {
 /* ------------------------------ index.html ------------------------------ */
 
 test('index.html 挂上了 PWA 需要的标签', () => {
-  expect(html).toMatch(/rel="manifest"\s+href="\/manifest\.webmanifest"/);
+  // 图标与 manifest 一律用**相对路径**：站点挂在 /battlechess-web/ 下，
+  // 写成 /assets/... 在 GitHub Pages 上会 404（本地 dev 反而是对的，所以只能靠这条钉住）
+  expect(html).toMatch(/rel="manifest"\s+href="\.\/manifest\.webmanifest"/);
+  expect(html).not.toMatch(/href="\/assets\//);
   expect(html).toMatch(/rel="apple-touch-icon"/);
   expect(html).toMatch(/name="theme-color"\s+content="#0d1117"/);
   expect(html, 'iOS 全屏需要这个（Safari 不读 manifest 的 display）').toContain(
@@ -127,7 +130,7 @@ test('竖屏遮罩写在 index.html 里，而不是 React 里', () => {
   expect(html).toMatch(/请把手机横过来/);
 });
 
-test('竖屏遮罩：默认隐藏，只在「竖屏 + 触屏」时出现', () => {
+test('竖屏遮罩：默认隐藏，只在「装成应用 + 竖屏 + 触屏」时出现', () => {
   const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
   const base = /#rotate\s*\{([^}]*)\}/.exec(clean);
@@ -137,9 +140,15 @@ test('竖屏遮罩：默认隐藏，只在「竖屏 + 触屏」时出现', () =>
   // 必须是 fixed：竖屏时舞台只缩到 0.39 倍，遮罩挂在舞台里会跟着一起缩
   expect(base![1], '遮罩要相对视口定位').toMatch(/position:\s*fixed/);
 
-  const mq = /@media\s*\(orientation:\s*portrait\)\s*and\s*\(pointer:\s*coarse\)\s*\{([\s\S]*?)\n\}/.exec(clean);
-  expect(mq, '找不到「竖屏 + 触屏」这条媒体查询').not.toBeNull();
-  expect(mq![1], '媒体查询里要把它打开').toMatch(/#rotate\s*\{[^}]*display:\s*flex/);
+  const mq =
+    /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(orientation:\s*portrait\)\s*and\s*\(pointer:\s*coarse\)\s*\{([\s\S]*?)\n\}/.exec(
+      clean,
+    );
+  expect(mq, '找不到「装成应用 + 竖屏 + 触屏」这条媒体查询').not.toBeNull();
+  // 选择器还要 .ready 闸门：文档刚解析时 innerWidth/Height 是 0，媒体查询会短暂误判
+  expect(mq![1], '媒体查询里要把它打开，且要过 .ready 闸门').toMatch(
+    /html\.ready\s+#rotate\s*\{[^}]*display:\s*flex/,
+  );
 
   // 反面：不能有第二处把它打开（比如手滑写成无条件 display:flex）
   const shown = [...clean.matchAll(/#rotate\s*\{([^}]*)\}/g)].filter((m) => /display:\s*flex/.test(m![1]));
@@ -147,6 +156,20 @@ test('竖屏遮罩：默认隐藏，只在「竖屏 + 触屏」时出现', () =>
 
   // (pointer: coarse) 是为了不误伤桌面：桌面把窗口拉窄拉高不该弹这个
   expect(clean, '缺 (pointer: coarse) 会在桌面上误弹').toContain('(pointer: coarse)');
+  // display-mode: standalone 是为了不误伤标签页 —— 标签页里窗口尺寸随时变，
+  // 页面刚加载那一瞬会误判成竖屏，于是首屏闪一下"白手机图标 + 黑底"。
+  expect(clean, '缺 display-mode: standalone，标签页里也会弹').toContain(
+    '(display-mode: standalone)',
+  );
+});
+
+test('首帧就按住竖屏遮罩：内联样式里也有 #rotate { display: none }', () => {
+  // 遮罩的标记在 body 里，而主样式表（dev 下由 JS 注入）可能比它晚到。
+  // 没样式的那一两帧它会以"裸 SVG"出现：color-scheme:dark 把默认文字刷成白色，
+  // 黑底上一个巨大白色手机图标 —— 就是曾经的首屏"黑白图案"。
+  const inline = /<style>([\s\S]*?)<\/style>/.exec(html);
+  expect(inline, 'index.html 里应该有内联样式').not.toBeNull();
+  expect(inline![1], '内联样式必须先把 #rotate 按住').toMatch(/#rotate\s*\{\s*display:\s*none;?\s*\}/);
 });
 
 /* ------------------------------ 横屏锁 ------------------------------ */
