@@ -162,3 +162,85 @@ test('缓存：短时间内只打一次端点（凭据本来就有 TTL）', asyn
   await resolveIceServers(opts);
   expect(fetchImpl).toHaveBeenCalledTimes(2);
 });
+
+// ── Cloudflare 的两种返回形状 ───────────────────────────────
+// 线上拿到的就是第一种（数组），但文档里还有第二种（对象）。只认数组那版会把对象解析成 0 条，
+// 表现是「中继配了、跨网络照样连不上」而且一句错都没有。
+
+test('Cloudflare 现状形状：iceServers 是数组，STUN 一段 + TURN 一段（多个 url）', () => {
+  const servers = normalizeIceResponse({
+    iceServers: [
+      { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.cloudflare.com:443'] },
+      {
+        urls: [
+          'turn:turn.cloudflare.com:3478?transport=udp',
+          'turn:turn.cloudflare.com:3478?transport=tcp',
+          'turns:turn.cloudflare.com:5349?transport=tcp',
+        ],
+        username: 'u',
+        credential: 'c',
+      },
+    ],
+    ttl: 3600,
+  });
+  expect(servers).toHaveLength(2);
+  expect(servers[1]).toMatchObject({ username: 'u', credential: 'c' });
+  expect(servers.flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]))).toContain(
+    'turn:turn.cloudflare.com:3478?transport=udp',
+  );
+});
+
+test('Cloudflare 文档里的另一种形状：iceServers 是**对象**，同样要认', () => {
+  expect(
+    normalizeIceResponse({
+      iceServers: { urls: ['turn:turn.cloudflare.com:3478?transport=udp'], username: 'u', credential: 'c' },
+      ttl: 600,
+    }),
+  ).toEqual([{ urls: 'turn:turn.cloudflare.com:3478?transport=udp', username: 'u', credential: 'c' }]);
+});
+
+test('relay 只看 turn:/turns:：端点只回 STUN 时不算"有中继"', async () => {
+  const fetchImpl = vi.fn(async () =>
+    new Response(JSON.stringify({ iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }] }), { status: 200 }),
+  );
+  const ice = await resolveIceServers({ env: { endpoint: 'https://w.dev' }, fetchImpl: fetchImpl as unknown as typeof fetch });
+  expect(ice.source, '来源确实是端点').toBe('endpoint');
+  expect(ice.relay, '但端点没给中继，不能谎报').toBe(false);
+});
+
+test('缓存按服务端 ttl 到期（提前 5 分钟换新）', async () => {
+  const fetchImpl = vi.fn(async () =>
+    new Response(
+      JSON.stringify({ iceServers: [{ urls: 'turn:cf:3478', username: 'u', credential: 'c' }], ttl: 600 }),
+      { status: 200 },
+    ),
+  );
+  let now = 1_000_000;
+  const opts = { env: { endpoint: 'https://w.dev' }, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => now };
+
+  await resolveIceServers(opts);
+  now += 4 * 60_000; // ttl 600s - 余量 300s = 有效 300s，还没到
+  await resolveIceServers(opts);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+  now += 2 * 60_000; // 过了 300s：换一份，别拿过期的凭据去建连
+  await resolveIceServers(opts);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
+
+test('拿不到中继只缓存 20 秒：端点抖一下不能把整局锁死在 STUN-only', async () => {
+  const fetchImpl = vi.fn(async () => {
+    throw new Error('network down');
+  });
+  let now = 1_000_000;
+  const opts = { env: { endpoint: 'https://w.dev' }, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => now };
+
+  expect((await resolveIceServers(opts)).relay).toBe(false);
+  now += 10_000;
+  await resolveIceServers(opts);
+  expect(fetchImpl, '10 秒内先别重复打').toHaveBeenCalledTimes(1);
+
+  now += 15_000; // 过了 20 秒
+  await resolveIceServers(opts);
+  expect(fetchImpl, '抖动过后要重试').toHaveBeenCalledTimes(2);
+});

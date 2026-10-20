@@ -15,7 +15,8 @@
     "typecheck": "tsc -b",
     "assets": "bash scripts/fetch-assets.sh",
     "click:check": "node scripts/click-check.mjs",
-    "pwa:check": "node scripts/pwa-check.mjs"
+    "pwa:check": "node scripts/pwa-check.mjs",
+    "online:check": "node scripts/online-check.mjs"
   },
   "dependencies": {
     "peerjs": "1.5.5",

@@ -46,8 +46,12 @@ jobs:
       - name: 测试
         run: pnpm test
 
+      # TURN 中继地址（Cloudflare Worker 签发的短时凭据）。没有它联机就只能在同网段/开放 NAT 下连，
+      # 跨网络必挂（见 README「联机」）。仓库 Settings → Variables 里配，不配也不会构建失败。
       - name: 构建
         run: pnpm build
+        env:
+          VITE_TURN_ENDPOINT: ${{ vars.VITE_TURN_ENDPOINT }}
 
       - uses: actions/configure-pages@v5
 

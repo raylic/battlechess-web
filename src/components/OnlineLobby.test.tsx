@@ -136,3 +136,17 @@ test('③ 错误行：有错才带 role=alert，没错时也占着位置（不�
   expect(quiet).toHaveTextContent('');
   expect(quiet).not.toHaveAttribute('role');
 });
+
+test('② 中继状态：有中继说"跨网络能连"，没有就直说只能同网段', () => {
+  setup({ step: 'host', relay: { relay: true } });
+  const ok = screen.getByTestId('relay-status');
+  expect(ok).toHaveTextContent('中继已就绪');
+  expect(ok.className).not.toContain('lobby-relay-warn');
+});
+
+test('② 中继状态：没配中继时是警告样式（这一行是"连不上"的第一现场）', () => {
+  setup({ step: 'host', relay: { relay: false } });
+  const warn = screen.getByTestId('relay-status');
+  expect(warn).toHaveTextContent('只能同一个网络');
+  expect(warn.className).toContain('lobby-relay-warn');
+});

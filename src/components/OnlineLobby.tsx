@@ -21,6 +21,8 @@ export interface Invite {
 export interface OnlineLobbyProps {
   step: LobbyStep;
   invite: Invite | null;
+  /** ② 的中继状态行（null = 还不知道，先不显示） */
+  relay?: { relay: boolean } | null;
   /** ③ 的错误行（null = 不显示） */
   joinError: string | null;
   onHost: () => void;
@@ -39,6 +41,7 @@ const COPY_FAIL = '复制失败，请手动选中复制';
 export function OnlineLobby({
   step,
   invite,
+  relay = null,
   joinError,
   onHost,
   onShowJoin,
@@ -111,6 +114,17 @@ export function OnlineLobby({
               正在创建房间…
             </p>
           )}
+          {relay ? (
+            <p
+              className={relay.relay ? 'lobby-hint lobby-relay' : 'lobby-hint lobby-relay lobby-relay-warn'}
+              data-testid="relay-status"
+              role="status"
+            >
+              {relay.relay
+                ? '中继已就绪：不在同一个网络也能连'
+                : '没有中继：只能同一个网络（或开放 NAT）连得上'}
+            </p>
+          ) : null}
           {copyHint?.step === step ? (
             <p className="lobby-hint" data-testid="copy-hint" role="status">
               {copyHint.text}

@@ -21,6 +21,7 @@ vi.mock('./transport/online', async () => {
         invitation: Promise.resolve(
           `https://x.test/?mode=online&host=battlechess-${seed}&seed=${seed}&side=blue`,
         ),
+        relay: Promise.resolve({ relay: true, source: 'endpoint' as const }),
         destroy: () => client.close(),
       };
     },

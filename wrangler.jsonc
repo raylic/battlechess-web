@@ -1,0 +1,9 @@
+{
+  "name": "battlechess-turn",
+  "compatibility_date": "2026-10-19",
+  "main": "workers/turn-credentials.js",
+  // 自定义域名必须绑：`*.workers.dev` 在国内解析/连通都不可靠（实测 curl 直接不通），
+  // 而这个地址是**每个玩家开局时都要拉的**（换 TURN 短时凭据），不能赌。
+  // 绑在已有的 raylic.work zone 上，走橙云。部署前要确认这个主机名没被 Cloudflare Access 拦。
+  "routes": [{ "pattern": "turn.raylic.work", "custom_domain": true }]
+}

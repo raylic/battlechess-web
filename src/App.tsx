@@ -17,6 +17,7 @@ import { useAiMove, useAiView, useNet, readAiKind, type AiKind } from './game/us
 import { useFitScale } from './game/useFitScale';
 import { useGame } from './game/useGame';
 import { useSession } from './game/useSession';
+import type { RelayStatus } from './transport/online';
 import { workerSupported } from './transport/worker';
 
 function readParams() {
@@ -48,6 +49,8 @@ export default function App() {
   const [waiting, setWaiting] = useState(false);
   /** 客人：正在连的房间号（连接屏上显示） */
   const [joinCode, setJoinCode] = useState<string | null>(null);
+  /** 房主：这次有没有拿到 TURN 中继（邀请屏上那一行提示，null = 还在探） */
+  const [relay, setRelay] = useState<RelayStatus | null>(null);
   /** 开局揭晓颜色（null = 不播）。每个会话只播一次：先转（landed=false），再飞到头像位 */
   const [reveal, setReveal] = useState<{ side: Side; landed: boolean; id: number } | null>(null);
   const revealedFor = useRef<object | null>(null);
@@ -156,6 +159,7 @@ export default function App() {
     setInvite(null);
     setJoinError(null);
     setJoinCode(null);
+    setRelay(null);
     setWaiting(false);
     setScreen('menu');
   }
@@ -171,6 +175,10 @@ export default function App() {
     const s = start('online', 'red', { seed: Number(code) });
     const host = s.host;
     if (!host) return;
+
+    // 中继状态只用于提示，不阻塞建房
+    setRelay(null);
+    void host.relay?.then((status) => setRelay(status));
 
     host.invitation
       .then((link) => setInvite({ code, link }))
@@ -201,6 +209,7 @@ export default function App() {
     setInvite(null);
     setJoinError(null);
     setJoinCode(null);
+    setRelay(null);
     setScreen('menu');
   }
 
@@ -211,6 +220,7 @@ export default function App() {
         <OnlineLobby
           step="host"
           invite={invite}
+          relay={relay}
           joinError={joinError}
           onHost={createRoom}
           onShowJoin={() => {}}

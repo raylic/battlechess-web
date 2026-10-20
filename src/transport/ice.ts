@@ -79,12 +79,28 @@ export function mergeIceServers(...groups: IceServer[][]): IceServer[] {
   return [...byUrl.values()];
 }
 
-/** 从任意形状的 JSON 里抠出 ICE server（容忍 Cloudflare / Metered 的几种返回格式） */
+/** 是不是中继（只有 `turn:` / `turns:` 才是；`stun:` 只是打洞辅助） */
+export function isRelayUrl(url: string): boolean {
+  const u = url.trim().toLowerCase();
+  return u.startsWith('turn:') || u.startsWith('turns:');
+}
+
+/**
+ * 从任意形状的 JSON 里抠出 ICE server。
+ *
+ * 实测见过的三种：
+ *   Cloudflare Calls：`{ iceServers: [ {urls:[stun…]}, {urls:[turn…], username, credential} ], ttl }`
+ *   Cloudflare 文档里的另一种：`{ iceServers: { urls: [...], username, credential } }`（**对象**，不是数组）
+ *   Metered 之类：`{ urls, username, credential }` 摊平
+ *
+ * 三种都认。只认数组的那版会把「对象」那种解析成 0 条 —— 表现是「中继明明配了、跨网络照样连不上」，
+ * 而且日志里一句错都没有。
+ */
 export function normalizeIceResponse(json: unknown): IceServer[] {
   if (typeof json !== 'object' || json === null) return [];
   const record = json as Record<string, unknown>;
-  // Cloudflare 返回 { iceServers: [ ... ] }；Metered 返回 { urls, username, credential }
-  const raw = Array.isArray(record.iceServers) ? record.iceServers : [record];
+  const nested = record.iceServers;
+  const raw = Array.isArray(nested) ? nested : typeof nested === 'object' && nested !== null ? [nested] : [record];
   const out: IceServer[] = [];
   for (const item of raw) {
     if (typeof item !== 'object' || item === null) continue;
@@ -121,16 +137,36 @@ export interface ResolvedIce {
   source: 'endpoint' | 'static' | 'stun-only';
 }
 
+/** 端点返回的 `ttl`（秒）：短时凭据的有效期，拿不到就按 1 小时算 */
+export function iceTtlSeconds(json: unknown, fallback = 3600): number {
+  if (typeof json !== 'object' || json === null) return fallback;
+  const ttl = (json as Record<string, unknown>).ttl;
+  if (typeof ttl !== 'number' || !Number.isFinite(ttl)) return fallback;
+  return Math.min(Math.max(ttl, 60), 24 * 3600);
+}
+
 /** 模块级缓存：凭据是短时的，但没必要每局都换一份 */
 interface CacheEntry {
   at: number;
+  /** 到期时刻（不是「取的那一刻」）—— 短时凭据必须在过期前换新的 */
+  expiresAt: number;
   value: ResolvedIce;
 }
 const CACHE_TTL_MS = 30 * 60 * 1000;
+/** 缓存下限：再短的 ttl 也别每次建连都打端点 */
+const MIN_CACHE_MS = 60 * 1000;
+/** 拿不到中继（端点挂了 / 没配）只缓存这么久：一次网络抖动不该把整局锁死在 STUN-only */
+const NEGATIVE_CACHE_MS = 20 * 1000;
+/** 凭据到期前留的余量：刚好过期那一刻建连，最容易掉进「allocation 被拒」 */
+const TTL_MARGIN_MS = 5 * 60 * 1000;
+
 let cache: CacheEntry | null = null;
+/** 正在取的请求：开房和第一次建连可能同时要 ICE 配置，别打两次端点 */
+let inflight: Promise<CacheEntry> | null = null;
 
 export function clearIceCache(): void {
   cache = null;
+  inflight = null;
 }
 
 /**
@@ -138,13 +174,29 @@ export function clearIceCache(): void {
  *
  * 顺序：短时凭据端点 → 静态凭据 → 只剩 STUN。端点超时/报错/返回空都静默降级，
  * 不能因为"中继没配好"就把联机整体弄挂（那比只能局域网更糟）。
+ *
+ * 缓存按**服务端给的 ttl** 到期（最多 30 分钟，且提前 5 分钟换），失败只缓存 20 秒 ——
+ * 原来不管成败都缓存 30 分钟，端点抖一下整局就只剩 STUN，而界面上看不出任何异常。
  */
 export async function resolveIceServers(opts: ResolveIceOptions): Promise<ResolvedIce> {
   const now = opts.now ?? Date.now;
-  if (cache && now() - cache.at < CACHE_TTL_MS) return cache.value;
+  if (cache && now() < cache.expiresAt) return cache.value;
+  if (inflight) return (await inflight).value;
 
+  inflight = fetchIceEntry(opts, now);
+  try {
+    const entry = await inflight;
+    cache = entry;
+    return entry.value;
+  } finally {
+    inflight = null;
+  }
+}
+
+async function fetchIceEntry(opts: ResolveIceOptions, now: () => number): Promise<CacheEntry> {
   const staticServers = staticIceServers(opts.env);
   let endpointServers: IceServer[] = [];
+  let ttlSeconds = 3600;
 
   if (opts.env.endpoint) {
     const fetchImpl = opts.fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
@@ -153,7 +205,11 @@ export async function resolveIceServers(opts: ResolveIceOptions): Promise<Resolv
       const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs ?? 4000) : null;
       try {
         const res = await fetchImpl(opts.env.endpoint, controller ? { signal: controller.signal } : {});
-        if (res.ok) endpointServers = normalizeIceResponse(await res.json());
+        if (res.ok) {
+          const json = await res.json();
+          endpointServers = normalizeIceResponse(json);
+          ttlSeconds = iceTtlSeconds(json);
+        }
       } catch {
         // 端点不通就当没配，继续往下退
       } finally {
@@ -163,12 +219,19 @@ export async function resolveIceServers(opts: ResolveIceOptions): Promise<Resolv
   }
 
   const servers = mergeIceServers(endpointServers, staticServers, STUN_SERVERS);
-  const relay = endpointServers.length > 0 || staticServers.length > 0;
+  // 「返回了点东西」不等于「有中继」：端点可能只回 STUN。必须是 turn:/turns: 才算
+  const relay = [...endpointServers, ...staticServers].some((server) =>
+    (Array.isArray(server.urls) ? server.urls : [server.urls]).some(isRelayUrl),
+  );
   const value: ResolvedIce = {
     servers,
     relay,
     source: endpointServers.length > 0 ? 'endpoint' : staticServers.length > 0 ? 'static' : 'stun-only',
   };
-  cache = { at: now(), value };
-  return value;
+
+  const life = relay
+    ? Math.min(Math.max(ttlSeconds * 1000 - TTL_MARGIN_MS, MIN_CACHE_MS), CACHE_TTL_MS)
+    : NEGATIVE_CACHE_MS;
+  const at = now();
+  return { at, expiresAt: at + life, value };
 }

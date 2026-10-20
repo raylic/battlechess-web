@@ -8,7 +8,7 @@ import type { Authority } from '../core/authority';
 import type { Side } from '../core/types';
 import type { Client } from '../transport/local';
 import { createLocalTransport } from '../transport/local';
-import { createOnlineClient, createOnlineHost } from '../transport/online';
+import { createOnlineClient, createOnlineHost, type RelayStatus } from '../transport/online';
 import { createWorkerClient, workerSupported } from '../transport/worker';
 import { otherSide, sideForSeed } from './side';
 import type { Mode } from './hudText';
@@ -27,6 +27,8 @@ export interface Session {
   /** 联机**房主**专有：邀请链接 + "客人来了" 通知（客人这边没有这个字段） */
   host?: {
     invitation: Promise<string>;
+    /** 中继状态：邀请屏上那一行"能不能跨网络"，取不到就一直是 null */
+    relay: Promise<RelayStatus>;
     /** 订阅客人加入；返回退订函数 */
     onGuest: (cb: (side: Side) => void) => () => void;
   };
@@ -95,6 +97,7 @@ export function createSession(
       dispose: online.destroy,
       host: {
         invitation: online.invitation,
+        relay: online.relay,
         onGuest: (cb) => {
           guests.add(cb);
           return () => guests.delete(cb);

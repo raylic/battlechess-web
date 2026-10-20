@@ -39,6 +39,11 @@ class FakeConn implements PeerConnectionLike {
     other.other = this;
   }
 
+  /** 对端那条连接（房主侧 / 客人侧各一个对象，打事件要打对那一个） */
+  get partner(): FakeConn | null {
+    return this.other;
+  }
+
   on(event: 'open', handler: () => void): void;
   on(event: 'data', handler: (data: unknown) => void): void;
   on(event: 'close', handler: () => void): void;
@@ -88,6 +93,7 @@ class FakePeer implements PeerLike {
   on(event: 'open', handler: (id: string) => void): void;
   on(event: 'connection', handler: (conn: PeerConnectionLike) => void): void;
   on(event: 'error', handler: (err: { type?: string } | undefined) => void): void;
+  on(event: 'disconnected', handler: () => void): void;
   on(event: string, handler: Handler): void {
     (this.handlers[event] ??= []).push(handler);
   }
@@ -516,6 +522,144 @@ test('连上但一直不发 join：握手超时后断开', async () => {
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(rejects(got).join()).toMatch(/握手超时/);
   expect((conn as FakeConn).closed).toBe(true);
+
+  handle.destroy();
+  host.close();
+});
+
+// ── 跨网络的稳定层：心跳 / 死座位回收 / 掉线钩子 ─────────────
+// 这一组守的是"连上之后"的死法 —— 真机上最难复现、也最让人以为"联机就是不稳"的那些。
+
+test('心跳：对面久无音讯就断开它，把视角空出来（不用等 close，那个可能永远不来）', async () => {
+  const net = new FakeNetwork();
+  const transport = createLocalTransport(21);
+  const host = transport.connect('red');
+  const handle = await attachPeerHost(transport.authority, 21, 'red', {
+    createPeer: net.create,
+    heartbeatMs: 5,
+    silenceMs: 20,
+  });
+
+  // 一条"僵尸"连接：join 之后就再也不说话（不回 ping）—— 真实场景是对面手机被系统冻结、
+  // 或者 WiFi 切 4G 之后半开，close 永远不来
+  const zombiePeer = net.create('bc-zombie');
+  await tick();
+  await tick();
+  const zombie = zombiePeer.connect(handle.hostId) as FakeConn;
+  await tick();
+  zombie.send({ t: 'join', seed: 21, side: 'blue' });
+  await tick();
+  await new Promise((resolve) => setTimeout(resolve, 70));
+
+  // 真正的客人（有心跳）应该能接进同一个视角，而不是被"蓝方已经有人了"挡住
+  const guest = await createPeerClient({
+    hostId: handle.hostId,
+    seed: 21,
+    side: 'blue',
+    createPeer: net.create,
+    heartbeatMs: 5,
+  });
+  await tick();
+  const msgs = collect(guest);
+  await tick();
+  expect(states(msgs).length, '重连的人应当拿到全量快照').toBeGreaterThan(0);
+  expect(rejects(msgs), '死座位必须被回收，否则这里会是「蓝方已经有人了」').toHaveLength(0);
+
+  guest.close();
+  handle.destroy();
+  host.close();
+});
+
+test('心跳：ping 由客人自动回 pong，且不会被当成业务消息拒掉', async () => {
+  const peer = new ManualPeer('bc-me');
+  const pending = manualClient(peer);
+  peer.emit('open', peer.id);
+  await tick();
+  peer.conn.emit('open');
+  const client = await pending;
+
+  const msgs = collect(client);
+  peer.conn.emit('data', { t: 'ping' });
+  await tick();
+  expect(peer.conn.sent.at(-1), '要回 pong').toEqual({ t: 'pong' });
+  expect(rejects(msgs)).toHaveLength(0);
+
+  client.close();
+});
+
+test('客人连上后掉线：走 onlost，不再甩一条「断开了」的 reject', async () => {
+  const net = new FakeNetwork();
+  const { handle, host } = await bootHost(22, net);
+
+  let lost = 0;
+  const guest = await createPeerClient({
+    hostId: handle.hostId,
+    seed: 22,
+    side: 'blue',
+    createPeer: net.create,
+    onlost: () => {
+      lost += 1;
+    },
+  });
+  await tick();
+  const msgs = collect(guest);
+  await tick();
+
+  handle.destroy();
+  await tick();
+  expect(lost).toBe(1);
+  expect(rejects(msgs)).toHaveLength(0);
+
+  guest.close();
+  host.close();
+});
+
+test('旧连接晚到的 close/error 不能删掉新连接刚占上的视角', async () => {
+  const net = new FakeNetwork();
+  const transport = createLocalTransport(23);
+  const host = transport.connect('red');
+  const handle = await attachPeerHost(transport.authority, 23, 'red', { createPeer: net.create });
+
+  const rawA = net.create('bc-a');
+  await tick();
+  await tick();
+  const connA = rawA.connect(handle.hostId) as FakeConn;
+  const hostSideA = connA.partner!;
+  await tick();
+  connA.send({ t: 'join', seed: 23, side: 'blue' });
+  await tick();
+
+  // 房主这一侧看到连接断了 → 释放蓝方
+  hostSideA.emit('close');
+  await tick();
+
+  // 重连进来的第二个蓝方占上了座位
+  const rawB = net.create('bc-b');
+  await tick();
+  await tick();
+  const connB = rawB.connect(handle.hostId) as FakeConn;
+  const gotB: ServerMsg[] = [];
+  connB.on('data', (data) => gotB.push(data as ServerMsg));
+  await tick();
+  connB.send({ t: 'join', seed: 23, side: 'blue' });
+  await tick();
+  expect(states(gotB).length, '第二个蓝方应当接进来').toBeGreaterThan(0);
+
+  // 旧连接的迟到事件（peerjs 会先 close 再 error）—— 不能把 B 的座位删掉
+  hostSideA.emit('error');
+  await tick();
+
+  // 第三个蓝方应当仍然被拒：座位属于 B
+  const rawC = net.create('bc-c');
+  await tick();
+  await tick();
+  const connC = rawC.connect(handle.hostId) as FakeConn;
+  const gotC: ServerMsg[] = [];
+  connC.on('data', (data) => gotC.push(data as ServerMsg));
+  await tick();
+  connC.send({ t: 'join', seed: 23, side: 'blue' });
+  await tick();
+  expect(rejects(gotC).join()).toMatch(/蓝方已经有人了/);
 
   handle.destroy();
   host.close();

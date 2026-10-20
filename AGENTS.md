@@ -36,6 +36,7 @@ pnpm exec vitest run -t "判和"
 pnpm dev  &  pnpm click:check                  # Chrome headless + CDP，真实鼠标命中测试
 pnpm build && pnpm preview
 pnpm pwa:check "http://localhost:4173/battlechess-web/?mode=hotseat&seed=42"  # 竖屏遮罩 / manifest / SW
+pnpm online:check                                                           # 联机：强制只走 TURN 的两页对局
 ```
 
 它们守的是 jsdom **结构性看不到**的问题：`fireEvent.click` 绕过命中测试（覆盖层盖住棋盘在单测里查不出来），
@@ -154,6 +155,57 @@ URL 参数：`?mode=ai|hotseat|dual`、`?side=red|blue`、`?seed=123`、`?ai=sea
 - **别再往代码里塞“公共免费 TURN”**：PeerJS 自带的 `0.peerjs.com:3478` 和 Open Relay 老静态账号
   实测都拿不到 `relay` candidate（2026-02 用 headless Chrome 验的：只有 host + srflx）。
 - 判据看失败文案：`网络打洞失败` / `双方网络都受限` = ICE 问题；`房间不存在` = 房间问题。
+- 单元测试**证明不了**这条链路（jsdom 没有 WebRTC）。想确认"跨网络真的能玩"，跑
+  `pnpm online:check`：它开两个页面、把 `RTCPeerConnection` 强制成 `iceTransportPolicy: 'relay'`，
+  于是只能走中继 —— 能建房、能同步一手、能刷新重连，才算过。
+
+### TURN 这条链路的运维坐标（2026-10 搭好）
+
+```
+Cloudflare Realtime TURN Key ──(TURN_TOKEN_ID + TURN_API_TOKEN，只在 Worker 的 secret 里)
+        ↓  POST /credentials/generate-ice-servers（ttl 3600）
+Worker: battlechess-turn（wrangler.jsonc，代码 workers/turn-credentials.js）
+        ↓  绑定自定义域名 —— **不能用 *.workers.dev**
+https://turn.raylic.work  ← 前端只认这一个：VITE_TURN_ENDPOINT
+        ↓  GitHub Actions 构建时注入（仓库 Variables，不是 Secrets）
+线上页面开局时 fetch 一次 → iceServers（stun 一段 + turn/turns 六条）
+```
+
+部署/改配置（在 `battlechess-web/` 下，读 `wrangler.jsonc`）：
+
+```sh
+npx wrangler@latest login
+npx wrangler@latest deploy                      # 代码 + routes（自定义域名在配置里）
+npx wrangler@latest secret put TURN_TOKEN_ID    # 值只在密码管理器里，别贴进聊天/代码
+npx wrangler@latest secret put TURN_API_TOKEN
+npx wrangler@latest deploy                      # secret 改完要再发一次才生效
+curl -s https://turn.raylic.work | head -c 200  # 200 + turn: urls 才算配好
+```
+
+- **`*.workers.dev` 在国内不可达**（实测 curl 直接不通；DNS/连接都过不去）。所以必须绑自定义域名
+  （`raylic.work` 那个 zone），并且**那个主机名不能被 Cloudflare Access 拦** —— 玩家是匿名拉凭据的，
+  302 到登录页 = 联机全挂。判据：`curl -s -o /dev/null -w '%{http_code}' https://turn.raylic.work` 要 200。
+- **中继真的能打通**的判据不是 curl 通了，是 Chrome 能拿到 `typ relay` candidate：headless Chrome +
+  `RTCPeerConnection({iceServers, iceTransportPolicy:'relay'})` 抓一遍 candidate（2026-10 实测成都移动网络下
+  `104.30.x.x` 的 relay candidate 正常）。
+- `normalizeIceResponse` 认**两种** Cloudflare 返回形状：线上是 `iceServers: [ … ]`（数组），文档里还有
+  `iceServers: { … }`（对象）。只认数组那版会把后者解析成 0 条，而且**一句错都不报**。
+- 缓存按服务端 `ttl` 到期（最多 30 分钟、提前 5 分钟换）；**拿不到中继只缓存 20 秒** —— 原来失败也缓存
+  30 分钟，端点抖一下整局就只剩 STUN。`relay` 只看 `turn:`/`turns:`，端点只回 STUN 不算有中继。
+
+### 联机的稳定性（"非局域网不稳定"改了什么）
+
+- **心跳**：两边每 10s `{t:'ping'}`，收到回 `{t:'pong'}`。75s 没声音就主动断开 —— 手机 WiFi 切 4G /
+  进程被冻结时 `close` 经常永远不来，不主动判死，房主会一直占着视角。阈值不能再缩短：后台标签页的
+  定时器被浏览器降到 1 次/分钟，那是节流不是死亡。ping/pong 是**传输层帧**，不进 `core/types`。
+- **视角占用表 `taken` 记 owner**：断开的释放是异步的，旧连接晚到的 `close`/`error` 会把新连接刚占上
+  的视角删掉。另外 join 时若"座位上那位"已经静默超时，直接踢掉让重连进来（否则
+  「手机换网 → 对面无限重连 → 永远被拒」是死锁）。
+- **客人自动重连**（`online.ts`）：掉线后按 1/2/4/8/15s 退避最多 8 次，重连成功房主回全量快照、棋局继续；
+  断线期间的操作排队补发。**第一次就没连上不重试**（重试只会多等 30 秒才看到原因）。
+  `房间不存在`/`已经有人`/`不是这一盘` 这类直接收手。
+- **信令掉线**：房主的 peer 收 `disconnected` 就 `reconnect()`，否则房间一直挂着但新客人连不进来。
+- 这些行为在 `src/transport/peer.test.ts` / `online.test.ts` 里用假 Peer 网络钉着；改心跳参数时同步改测试。
 
 ### 新增素材时别忘了首页预热清单
 

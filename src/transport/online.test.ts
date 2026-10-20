@@ -36,13 +36,22 @@ vi.mock('./peer', () => ({
   attachPeerHost: vi.fn(),
 }));
 
+// 中继探测这里换成假的：真实现会去打 VITE_TURN_ENDPOINT（测试不许上网）
+vi.mock('./ice', () => ({
+  iceEnvFromImportMeta: () => ({}),
+  clearIceCache: vi.fn(),
+  resolveIceServers: vi.fn(),
+}));
+
 import { afterEach, vi } from 'vitest';
 import * as peerModule from './peer';
-import { createOnlineClient, createOnlineHost, loadPeer } from './online';
+import { createOnlineClient, createOnlineHost, loadPeer, probeRelay } from './online';
+import { resolveIceServers } from './ice';
 import type { Client } from './local';
 import type { ClientMsg, ServerMsg } from '../core/types';
 
 const createPeerClient = vi.mocked(peerModule.createPeerClient);
+const resolveIce = vi.mocked(resolveIceServers);
 const attachPeerHost = vi.mocked(peerModule.attachPeerHost);
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -234,4 +243,139 @@ test('房主：客人握手成功时回调 onGuest（界面靠它从"等待房�
   fireGuest!('blue');
   expect(seen).toEqual(['blue']);
   host.destroy();
+});
+
+// ── 掉线自动重连 ──────────────────────────────────────────
+// "连上之后断一下这局就没了"是非局域网体验里最伤的一环：房主那一侧的棋局还在，
+// 客人只是连接断了。重连成功时房主会回全量快照，棋局原样继续。
+
+test('客人：连上之后掉线会自动重连，断线期间的操作在重连后补发', async () => {
+  let lost: (() => void) | null = null;
+  const first = fakeClient('blue');
+  createPeerClient.mockImplementationOnce(async (opts) => {
+    lost = opts!.onlost!;
+    return first.client;
+  });
+
+  const client = createOnlineClient('battlechess-1', 1, 'blue');
+  const got: ServerMsg[] = [];
+  client.onmessage = (msg) => got.push(msg);
+  await tick();
+  await tick();
+  expect(got, '第一次就连上了，不该有消息').toHaveLength(0);
+
+  expect(lost, 'onlost 必须交给装配层处理（而不是底层甩一条 reject）').toBeTypeOf('function');
+  lost!();
+  await tick();
+  expect(got[0]).toMatchObject({ t: 'reject' });
+  expect((got[0] as { reason: string }).reason).toContain('正在重连');
+
+  // 断线期间玩家还在点：先排队，重连成功后按序补发
+  client.send({ t: 'flip', at: [0, 0] });
+  client.send({ t: 'flip', at: [0, 1] });
+
+  const second = fakeClient('blue');
+  createPeerClient.mockImplementationOnce(async () => second.client);
+  await new Promise((resolve) => setTimeout(resolve, 1_200)); // 第一次重试在 1s 后
+
+  expect(second.sent).toEqual([
+    { t: 'flip', at: [0, 0] },
+    { t: 'flip', at: [0, 1] },
+  ]);
+  expect(got.at(-1)).toEqual({ t: 'reject', reason: '已重新连接' });
+
+  client.close();
+  createPeerClient.mockReset();
+});
+
+test('客人：重连次数用尽 → 一条「重连失败」，别无限转圈', async () => {
+  vi.useFakeTimers();
+  try {
+    let lost: (() => void) | null = null;
+    createPeerClient.mockImplementationOnce(async (opts) => {
+      lost = opts!.onlost!;
+      return fakeClient('blue').client;
+    });
+
+    const client = createOnlineClient('battlechess-1', 1, 'blue');
+    const got: ServerMsg[] = [];
+    client.onmessage = (msg) => got.push(msg);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lost).toBeTypeOf('function');
+
+    createPeerClient.mockImplementation(async () => {
+      throw new Error('连不上对方：双方网络都受限，需要 TURN 中继');
+    });
+    lost!();
+    await vi.advanceTimersByTimeAsync(300_000); // 足够把所有退避走完
+
+    const last = got.at(-1) as { t: string; reason: string };
+    expect(last.t).toBe('reject');
+    expect(last.reason).toMatch(/^重连失败：/);
+    expect(last.reason).toMatch(/已重试 8 次/);
+
+    client.close();
+  } finally {
+    createPeerClient.mockReset();
+    vi.useRealTimers();
+  }
+});
+
+test('客人：重连时发现房间没了 → 立刻收手，不重试', async () => {
+  vi.useFakeTimers();
+  try {
+    let lost: (() => void) | null = null;
+    createPeerClient.mockImplementationOnce(async (opts) => {
+      lost = opts!.onlost!;
+      return fakeClient('blue').client;
+    });
+
+    const client = createOnlineClient('battlechess-1', 1, 'blue');
+    const got: ServerMsg[] = [];
+    client.onmessage = (msg) => got.push(msg);
+    await vi.advanceTimersByTimeAsync(0);
+
+    createPeerClient.mockImplementation(async () => {
+      throw new Error('房间不存在，或房主已经关闭了这个房间');
+    });
+    lost!();
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    const reasons = got.map((m) => (m as { reason: string }).reason);
+    expect(reasons.at(-1)).toContain('房间不存在');
+    expect(reasons.filter((r) => r.includes('正在重连')), '房间没了就别再重试').toHaveLength(1);
+
+    client.close();
+  } finally {
+    createPeerClient.mockReset();
+    vi.useRealTimers();
+  }
+});
+
+test('中继探测：第一次没探到会重试一次（瞬时失败不该被写成"没有中继"）', async () => {
+  vi.useFakeTimers();
+  try {
+    resolveIce.mockResolvedValueOnce({ relay: false, source: 'stun-only', servers: [] });
+    resolveIce.mockResolvedValueOnce({ relay: true, source: 'endpoint', servers: [] });
+
+    const pending = probeRelay();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(pending).resolves.toEqual({ relay: true, source: 'endpoint' });
+  } finally {
+    resolveIce.mockReset();
+    vi.useRealTimers();
+  }
+});
+
+test('中继探测：退避几次都没探到 → 明确回报"没有中继"', async () => {
+  vi.useFakeTimers();
+  try {
+    resolveIce.mockResolvedValue({ relay: false, source: 'stun-only', servers: [] });
+    const pending = probeRelay();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(pending).resolves.toEqual({ relay: false, source: 'stun-only' });
+  } finally {
+    resolveIce.mockReset();
+    vi.useRealTimers();
+  }
 });
