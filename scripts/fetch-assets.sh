@@ -19,7 +19,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 # 清单：文件名            用在哪
 WANTED=(
-  bg.jpg                 # 全局 / 开始界面背景
+  # 背景不再取上游那张草坪图：现在是重绘的 field-bg.webp（见 README「本项目做了什么」）
   begin.png              # 开始界面立绘
   chess.png              # 棋子精灵图（6 列等级 × 2 行红蓝）
   unopen.png             # 未翻开棋子的背面

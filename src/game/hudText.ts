@@ -1,7 +1,7 @@
 // HUD 文案与按钮状态 —— 全是纯函数，所以"赢了显示失败""按钮该亮不亮"这类问题可以被单测钉住。
 // （原生版这部分逻辑埋在 hud.js 里拼 innerHTML，一行测试都没有）
 
-import { MAX_NO_EAT, MIN_GIVEUP, REASON_TEXT } from '../core/judge';
+import { MAX_NO_EAT, REASON_TEXT } from '../core/judge';
 import type { Side, ViewState } from '../core/types';
 
 export type Mode = 'ai' | 'hotseat' | 'dual' | 'online';
@@ -30,10 +30,13 @@ export function bannerText(view: ViewState, mode: Mode): string {
   return `${turnName}回合 · 请翻棋或走子`;
 }
 
+/**
+ * 顶部的计数行：只报“已经多少步没吃子”（满 MAX_NO_EAT 步判和）。
+ * 总步数和“多少步后才能认输”都不再写在界面上：前者棋盘上看不出来、玩家也不关心，
+ * 后者只解释一次就够了（认输按钮灰着的那几秒）。
+ */
 export function footText(view: ViewState): string {
-  const base = `已走 ${view.step} 步 · 连续 ${view.noEat} 步无吃子（${MAX_NO_EAT} 步判和）`;
-  if (view.over || view.step >= MIN_GIVEUP) return base;
-  return `${base} · 走过 ${MIN_GIVEUP} 步后才能认输`;
+  return `已 ${view.noEat} 步未吃子，${MAX_NO_EAT} 步将判和`;
 }
 
 export function resultTitle(winner: Side | 'draw' | null): string {

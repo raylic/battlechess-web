@@ -94,9 +94,9 @@ test('人机对战：翻棋 → AI 应招 → 步数累加，认输按钮初期�
   // 执蓝时电脑先手，开局就已经翻了 1 张 —— 这里只要求"最多 1 张"，不假设我永远先手
   expect(revealed().length).toBeLessThanOrEqual(1);
 
-  // 步数从页脚读：AI 可能翻子也可能走子（走子不增加"已翻开"的数量），
-  // 所以只有步数是可靠的进度指标
-  const steps = () => Number(/已走 (\d+) 步/.exec(document.querySelector('#foot')!.textContent!)![1]);
+  // 步数从 #foot 的 data-step 读：AI 可能翻子也可能走子（走子不增加"已翻开"的数量），
+  // 所以只有步数是可靠的进度指标（界面上不再显示总步数，只留"未吃子步数"）
+  const steps = () => Number(document.querySelector('#foot')!.getAttribute('data-step'));
   const s0 = steps();
 
   // 玩家翻一张暗子（不能硬编码 0,0：AI 先手时它可能已经被翻开了）
@@ -120,7 +120,7 @@ test('终局结分：人机认输 −20，掉级后名牌跟着变', async () =>
   fireEvent.click(screen.getByTestId('mode-ai'));
   await waitMyTurn();
 
-  const steps = () => Number(/已走 (\d+) 步/.exec(document.querySelector('#foot')!.textContent!)![1]);
+  const steps = () => Number(document.querySelector('#foot')!.getAttribute('data-step'));
   const myPlate = () =>
     [...document.querySelectorAll('.plate')].find((p) => p.querySelector('.plate-id')?.textContent === '玩家')!;
   expect(myPlate().textContent).toContain('禁卫军');
@@ -158,11 +158,15 @@ test('不是自己回合时，点棋盘不会有任何进展', async () => {
   await waitFor(() => expect(screen.getByTestId('banner')).toHaveTextContent('电脑思考中…'));
 
   // 趁着轮到电脑，连点几下：不该有任何 effect（也不能抛错）。
-  // 同步比较状态文本 —— 电脑 420ms 后才落子，不能给它插进来的机会。
-  const footBefore = document.querySelector('#foot')!.textContent;
+  // 同步比较状态 —— 电脑 420ms 后才落子，不能给它插进来的机会。
+  // ⚠ 必须连着 data-step 一起比：计数行只显示“未吃子步数”，翻一张子它是不变的，
+  // 光比文本等于什么都没比。
+  const foot = document.querySelector('#foot')!;
+  const before = `${foot.getAttribute('data-step')}|${foot.textContent}`;
   fireEvent.click(screen.getByTestId('cell-1-1'));
   fireEvent.click(screen.getByTestId('cell-2-2'));
-  expect(document.querySelector('#foot')!.textContent, '非我回合点棋盘不该有任何进展').toBe(footBefore);
+  const after = `${foot.getAttribute('data-step')}|${foot.textContent}`;
+  expect(after, '非我回合点棋盘不该有任何进展').toBe(before);
 });
 
 test('棋子按 id 复用节点：AI 走完后仍是同一批 DOM 节点（动画才有得放矢）', async () => {

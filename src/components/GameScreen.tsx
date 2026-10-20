@@ -34,7 +34,7 @@ export function GameScreen({
 }: GameScreenProps) {
   return (
     <div id="game">
-      <img id="bg" src={`${import.meta.env.BASE_URL}assets/bg.jpg`} alt="" />
+      <img id="bg" src={`${import.meta.env.BASE_URL}assets/field-bg.webp`} alt="" />
       {/* 首帧还没收到初始 state（transport 是异步下发的）*/}
       {view ? (
         <>

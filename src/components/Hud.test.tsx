@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
-import { MIN_GIVEUP } from '../core/judge';
+import { MAX_NO_EAT, MIN_GIVEUP } from '../core/judge';
 import { createState } from '../core/reduce';
 import type { Side, ViewState } from '../core/types';
 import { viewFor } from '../core/visibility';
@@ -82,12 +82,14 @@ test('认输按钮：步数够了但不是自己回合 → 仍然禁用', () => 
   expect(screen.getByTitle('认输')).toBeDisabled();
 });
 
-test('底部提示：20 步前提示还不能认输', () => {
+test('顶部计数行：只报未吃子步数和判和阈值', () => {
   setup(view({ step: 3, noEat: 2 }));
   const foot = document.querySelector('#foot')!;
-  expect(foot.textContent).toContain('已走 3 步');
-  expect(foot.textContent).toContain('连续 2 步无吃子');
-  expect(foot.textContent).toContain('才能认输');
+  expect(foot.textContent).toBe(`已 2 步未吃子，${MAX_NO_EAT} 步将判和`);
+  // 总步数和认输门槛提示已从界面上拿掉（步数改走 data-step，给测试与 click-check 用）
+  expect(foot.textContent).not.toContain('已走');
+  expect(foot.textContent).not.toContain('才能认输');
+  expect(foot.getAttribute('data-step')).toBe('3');
 });
 
 test('终局：回合条显示对局结束，认输禁用', () => {

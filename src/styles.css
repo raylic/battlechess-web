@@ -14,8 +14,13 @@
   --piece-z: 52px;
 
   --gold: #ffd04b;
-  --board-1: #aa8fc3;
-  --board-2: #ffffff;
+  /* 棋盘贴图（自带金边）：贴图边长 / 棋格区边长 = 1536 / 1496.46
+     --board-art   贴图要铺多大（相对棋盘盒 6×--cell）
+     --board-art-x/y 贴图往左上挪多少，挪完棋格区正好压在 6×6 个格子上
+     数值由 src/game/geometry.ts 的 BOARD_ART 推出，layout.test.ts 验算，别手改 */
+  --board-art: 102.6422%;
+  --board-art-x: -1.3004%;
+  --board-art-y: -1.2102%;
   --c-select: #ff9900;
   --c-target: #b0e2ff;
   --c-last: #9aff9a;
@@ -109,11 +114,24 @@ body {
   grid-template-rows: repeat(6, var(--cell));
   transform: rotateX(var(--tilt));
   transform-style: preserve-3d;
-  /* 用 inset 阴影画金边，不能用 border：border-box 下 border 会吃掉 12px，
-     6 列格子就放不下了（tests/layout.test.ts 守着这条）*/
-  box-shadow:
-    inset 0 0 0 6px var(--gold),
-    0 24px 50px rgba(0, 0, 0, 0.45);
+}
+
+/* 棋盘外观（紫白格 + 金边 + 圆角）整张来自贴图；格子自己不再上底色。
+   贴图比棋盘盒大一圈（--board-art），多出来的就是自带金边，故意画到盒子外面去 ——
+   这样 6×6 个格子仍然严格对住贴图里的棋格区，几何一个像素都不用改。 */
+.board-art {
+  position: absolute;
+  left: var(--board-art-x);
+  top: var(--board-art-y);
+  width: var(--board-art);
+  height: var(--board-art);
+  background: url("/assets/board-flat.webp") 0 0 / 100% 100% no-repeat;
+  /* 投影挂在贴图上而不是 #board 上：观感上的“板子”是贴图那一圈，
+     挂在 6×6 盒子上阴影会缩进金边里面。
+     用 drop-shadow 而不是 box-shadow：贴图四角是**透明**的（金边圆角外面没白底），
+     box-shadow 是个矩形，会在四个圆角外面露出方角的影子。 */
+  filter: drop-shadow(0 20px 26px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
 }
 
 .cell {
@@ -121,12 +139,8 @@ body {
   cursor: default;
   transition: background-color 0.12s;
 }
-.cell.parity-0 {
-  background: var(--board-1);
-}
-.cell.parity-1 {
-  background: var(--board-2);
-}
+/* 紫/白格不再由 CSS 上色（贴图里已经有了），parity-* 只留类名给测试与调试用。
+   下面这几个状态色是**盖在贴图上**的覆盖层，保持不透明。 */
 .cell.is-last {
   background: var(--c-last);
 }
@@ -469,17 +483,29 @@ body {
   padding: 4px 6px;
 }
 
+/* 顶部计数行（已 N 步未吃子 / 30 步将判和）。
+   以前是页脚一整行（总步数 + 无吃子 + 认输门槛），现在只留“离和棋还差几步”这一个数，
+   挂在回合条下面一行。用文字阴影代替黑底胶囊：行高只有 12px，给它加底框会顶到棋盘上缘。 */
 #foot {
-  left: 330px;
-  top: 636px;
-  width: 340px;
+  position: absolute;
+  left: 350px;
+  top: 149px;
+  width: 300px;
+  text-align: center;
+  font: 500 12px/1 var(--font);
+  color: #ffe9a8;
+  letter-spacing: 0.3px;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.95),
+    0 0 8px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
 }
 
 /* ---------------- 开始界面 ---------------- */
 #start {
   position: absolute;
   inset: 0;
-  background: #0d1117 url("/assets/bg.jpg") center/cover no-repeat;
+  background: #0d1117 url("/assets/field-bg.webp") center/cover no-repeat;
 }
 #start .art {
   position: absolute;
@@ -598,7 +624,7 @@ body {
      用它压在背景上（而不是盖在面板上），面板自己保持亮 —— 顺序反了整块会发灰。 */
   background:
     linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45)),
-    #0d1117 url("/assets/bg.jpg") center/cover no-repeat;
+    #0d1117 url("/assets/field-bg.webp") center/cover no-repeat;
 }
 
 .lobby-panel {

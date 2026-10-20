@@ -9,7 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
-import { CELL, PIECE_SCALE, PIECE_SIZE, PIECE_Z, TILT_DEG } from './game/geometry';
+import { BOARD_ART, CELL, PIECE_SCALE, PIECE_SIZE, PIECE_Z, TILT_DEG } from './game/geometry';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
@@ -38,6 +38,9 @@ const cssPieceZ = num(rootVars, /--piece-z:\s*([\d.]+)px/);
 const stageLeft = num(stage, /left:\s*(-?[\d.]+)px/);
 const stageTop = num(stage, /top:\s*(-?[\d.]+)px/);
 const boardBorder = num(board, /border:\s*([\d.]+)px/) ?? 0;
+const cssArtSize = num(rootVars, /--board-art:\s*(-?[\d.]+)%/);
+const cssArtX = num(rootVars, /--board-art-x:\s*(-?[\d.]+)%/);
+const cssArtY = num(rootVars, /--board-art-y:\s*(-?[\d.]+)%/);
 
 const design = { w: 1000, h: 650 };
 const boardSize = cssCell! * 6;
@@ -52,11 +55,24 @@ function project(u: number, v: number) {
 }
 
 const half = boardSize / 2;
+
+/* 棋盘外观是一张贴图，四周自带金边：它会画到 6×6 盒子**外面**去（见 .board-art）。
+   投影后的实际占位得把这一圈算上，否则“不压头像框/面板”那几条断言是虚的。
+   贴图不对称（左边距 25、右边距 23），这里取较大的一侧，宁可保守。 */
+const art = BOARD_ART.area;
+const artPx = {
+  left: (art.left / art.width) * boardSize,
+  top: (art.top / art.width) * boardSize,
+  right: ((BOARD_ART.size - art.left - art.width) / art.width) * boardSize,
+  bottom: ((BOARD_ART.size - art.top - art.height) / art.width) * boardSize,
+};
+const halfW = half + Math.max(artPx.left, artPx.right);
+const halfH = half + Math.max(artPx.top, artPx.bottom);
 const quad = {
-  tl: project(-half, -half),
-  tr: project(half, -half),
-  br: project(half, half),
-  bl: project(-half, half),
+  tl: project(-halfW, -halfH),
+  tr: project(halfW, -halfH),
+  br: project(halfW, halfH),
+  bl: project(-halfW, halfH),
 };
 
 /** 投影后的棋盘在某个 y 高度上的左右边界 */
@@ -102,6 +118,21 @@ test('棋子必须整个落在棋盘平面之前，否则下半身会被格子�
 test('6 列格子必须放得进棋盘盒子（border-box 下不能加 border）', () => {
   expect(boardBorder, '#board 不要用 border，会吃掉 12px 导致最后一列溢出').toBe(0);
   expect(boardSize + boardBorder * 2).toBeLessThanOrEqual(boardSize);
+});
+
+test('棋盘贴图的放大倍数/偏移必须与 geometry.ts 的 BOARD_ART 一致', () => {
+  // 贴图里的棋格区（area）要正好压在 6×6 个格子上：放大 = 全长/棋格区宽，偏移 = −内边距/棋格区宽。
+  // 写歪的表现很阴：格子边缘和贴图色块错开 1~2px，只有在棋盘四角才看得出来。
+  const want = {
+    size: (BOARD_ART.size / art.width) * 100,
+    x: -(art.left / art.width) * 100,
+    y: -(art.top / art.width) * 100,
+  };
+  expect(cssArtSize, '解析不到 --board-art').not.toBeNull();
+  expect(cssArtSize!).toBeCloseTo(want.size, 2);
+  expect(cssArtX!).toBeCloseTo(want.x, 2);
+  expect(cssArtY!).toBeCloseTo(want.y, 2);
+  expect(blockOf('.board-art')).toContain('url("/assets/board-flat.webp")');
 });
 
 test('投影后的棋盘整个落在 1000x650 画布内（含棋子外溢）', () => {

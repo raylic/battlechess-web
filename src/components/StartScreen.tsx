@@ -1,4 +1,7 @@
+import { useEffect } from 'react';
+
 import type { Mode } from '../game/hudText';
+import { prefetchGameAssets } from '../game/prefetch';
 
 export interface StartScreenProps {
   notice: string | null;
@@ -8,6 +11,13 @@ export interface StartScreenProps {
 }
 
 export function StartScreen({ notice, onChoose, onOnline }: StartScreenProps) {
+  // 首页闲着的时候把对局要用的图预热掉（棋盘精灵图、暗面、两块名牌…约 400 KB）。
+  // 点按钮再加载的话，第一帧会先出现"空棋盘"，弱网下能看出来。
+  // prefetchGameAssets 自己是幂等的：回到首页、StrictMode 双挂载都不会重复请求。
+  useEffect(() => {
+    void prefetchGameAssets();
+  }, []);
+
   return (
     <div id="start" data-testid="start-screen">
       <img className="art" src={`${import.meta.env.BASE_URL}assets/begin.webp`} alt="皇家战棋" />

@@ -3,7 +3,7 @@
 
 import { expect, test } from 'vitest';
 
-import { MIN_GIVEUP } from '../core/judge';
+import { MAX_NO_EAT } from '../core/judge';
 import { createState } from '../core/reduce';
 import type { Side, ViewState } from '../core/types';
 import { viewFor } from '../core/visibility';
@@ -60,14 +60,11 @@ test('回合条文案按模式区分', () => {
   expect(bannerText(view({ over: true, winner: 'draw' }), 'ai')).toBe('对局结束');
 });
 
-test('底部提示：20 步前会提示还不能认输，之后不再提示', () => {
-  const early = footText(view({ step: MIN_GIVEUP - 1, noEat: 3 }));
-  expect(early).toContain(`已走 ${MIN_GIVEUP - 1} 步`);
-  expect(early).toContain('连续 3 步无吃子');
-  expect(early).toContain('才能认输');
-
-  const late = footText(view({ step: MIN_GIVEUP, noEat: 0 }));
-  expect(late).not.toContain('才能认输');
+test('顶部计数行：只报未吃子步数与判和阈值（不再提总步数/认输门槛）', () => {
+  expect(footText(view({ step: 7, noEat: 3 }))).toBe(`已 3 步未吃子，${MAX_NO_EAT} 步将判和`);
+  expect(footText(view({ step: 0, noEat: 0 }))).toBe(`已 0 步未吃子，${MAX_NO_EAT} 步将判和`);
+  // 总步数换过位置也不再出现在这一行：它挪到了 #foot 的 data-step 上
+  expect(footText(view({ step: 7, noEat: 3 }))).not.toContain('已走');
 });
 
 test('结算标题', () => {

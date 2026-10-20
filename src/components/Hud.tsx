@@ -115,6 +115,12 @@ export function Hud({ view, mode, side, onResign, points = null, reveal = null }
         {bannerText(view, mode)}
       </div>
 
+      {/* 计数行：只报“已多少步未吃子 / 多少步判和”，摆在回合条下面一行。
+          data-step 是给测试和 scripts/click-check.mjs 读“走没走成”的 —— 界面上不再显示总步数。 */}
+      <div id="foot" data-testid="foot" data-step={view.step}>
+        {footText(view)}
+      </div>
+
       <div id="controls">
         <button
           type="button"
@@ -126,9 +132,6 @@ export function Hud({ view, mode, side, onResign, points = null, reveal = null }
         >
           认输
         </button>
-        <div className="hint" id="foot">
-          {footText(view)}
-        </div>
       </div>
     </>
   );

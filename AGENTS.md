@@ -155,6 +155,12 @@ URL 参数：`?mode=ai|hotseat|dual`、`?side=red|blue`、`?seed=123`、`?ai=sea
   实测都拿不到 `relay` candidate（2026-02 用 headless Chrome 验的：只有 host + srflx）。
 - 判据看失败文案：`网络打洞失败` / `双方网络都受限` = ICE 问题；`房间不存在` = 房间问题。
 
+### 新增素材时别忘了首页预热清单
+
+`src/game/prefetch.ts` 的 `GAME_ASSETS` 决定首页会提前拉哪些图。**视图里新加一张进入对局就会用到的图，
+要同步加进这个清单**（`prefetch.test.ts` 只校验清单里的文件存在，不会反过来发现你漏加）。
+加错了不要紧，但漏了的表现是「点进对局先闪一帧空图」，很难察觉。
+
 ## 6. 素材与文档
 
 - **素材清单与体积以 `README.md` 的「素材与许可」为准**（用户不要单独的 ASSETS.md —— 别再建它）。

@@ -58,6 +58,10 @@ export function Board({ view, onAction }: BoardProps) {
   return (
     <div id="stage">
       <div id="board" data-testid="board">
+        {/* 棋盘外观（紫白格 + 金边）是**一张贴图**，它比 6×6 盒子大一圈（金边画在盒子外）。
+            必须排在格子之前：格子是 position:relative，同层按 DOM 顺序画，
+            贴图在前才不会被选中/可走那几个覆盖色挡住。 */}
+        <div className="board-art" aria-hidden="true" />
         {cells}
         <div id="pieces">
           {view.cells

@@ -136,11 +136,11 @@ async function main() {
   const probe = () =>
     evalJs(`(() => {
       const el = document.elementFromPoint.apply(document, window.__p ?? [0, 0]);
-      const foot = document.querySelector('#foot')?.textContent ?? '';
+      const foot = document.querySelector('#foot');
       return {
         hit: el ? (el.id || el.className || el.tagName) : null,
         hitCell: el?.dataset?.cell ?? null,
-        step: Number((foot.match(/已走 (\\d+) 步/) ?? [])[1] ?? -1),
+        step: Number(foot?.getAttribute('data-step') ?? -1),
         revealed: document.querySelectorAll('.piece.is-revealed').length,
         selected: !!document.querySelector('.cell.is-selected'),
         targets: document.querySelectorAll('.cell.is-target').length,
