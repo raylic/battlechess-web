@@ -155,6 +155,10 @@ async function run(chrome, keepSocket) {
   const cells = (page) => page.eval(`document.querySelectorAll('[data-testid^="cell-"]').length`);
   const revealed = (page) => page.eval(`document.querySelectorAll('.piece.is-revealed').length`);
   const toast = (page) => page.eval(`document.querySelector('#toast')?.textContent ?? ''`);
+  const hasButton = (page, text) =>
+    page.eval(
+      `!![...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(text)})`,
+    );
   const clickText = (page, text) =>
     page.eval(`(() => {
       const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(text)});
@@ -182,8 +186,10 @@ async function run(chrome, keepSocket) {
   console.log(`中继专用自检：${ROOM_URL}\n`);
 
   const host = await openPage(ROOM_URL);
-  await sleep(1200);
-  await clickText(host, '创建');
+  // 对着线上跑时首屏要下 1.5 MB 资源（还带 SW 注册），按钮不会立刻在 —— 等它渲染出来再点，
+  // 否则点到空气，后面每一条都会跟着超时
+  await waitFor('大厅渲染完成', () => hasButton(host, '创建'), 45_000);
+  check((await clickText(host, '创建')) === 'ok', '点了「创建」');
 
   const link = await waitFor(
     '房主拿到邀请链接',
